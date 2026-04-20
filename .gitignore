@@ -1,0 +1,9 @@
+build/
+Log/
+release/
+*.log
+*.err.log
+*.out.log
+*.zip
+.vs/
+.vscode/
