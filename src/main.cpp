@@ -29,6 +29,32 @@ namespace {
 constexpr int kInitWinW = 960;
 constexpr int kInitWinH = 360;
 constexpr const char *kWindowTitle = "STM Femto Bolt Viewer ver1";
+constexpr float kPanelAspectRatio = 16.0f / 9.0f;
+constexpr double kPointPaneStartRatio = 2.0 / 3.0;
+constexpr float kYawSensitivity = 0.35f;
+constexpr float kPitchSensitivity = 0.25f;
+constexpr float kPitchClampDeg = 89.0f;
+constexpr float kZoomMin = 0.35f;
+constexpr float kZoomMax = 4.0f;
+constexpr float kZoomStepScale = 0.1f;
+constexpr float kPanToWorldScale = 0.0008f;
+constexpr float kBaseFovDeg = 55.0f;
+constexpr float kNearClipZ = 0.05f;
+constexpr float kFarClipZ = 30.0f;
+constexpr float kCameraBaseOffsetZ = -1.2f;
+constexpr float kPi = 3.1415926535f;
+constexpr float kDepthPseudoMinMm = 250.0f;
+constexpr float kDepthPseudoRangeMm = 4750.0f;
+constexpr int kMeshSamplingStep = 6;
+constexpr float kMeshMinDepthMeters = 0.12f;
+constexpr float kMeshMaxDepthMeters = 12.0f;
+constexpr int kCpuPreviewW = 640;
+constexpr int kCpuPreviewH = 360;
+constexpr int kCpuFallbackTargetPoints = 6000;
+constexpr float kGridY = -0.55f;
+constexpr float kGridHalfExtent = 1.2f;
+constexpr float kGridStep = 0.1f;
+constexpr float kAxisLength = 0.5f;
 
 struct FpsMeter {
     std::chrono::steady_clock::time_point windowStart = std::chrono::steady_clock::now();
@@ -80,10 +106,10 @@ struct AppState {
     MouseControl mouse;
     GpuMesh mesh;
     PointRenderMode pointMode = PointRenderMode::GpuMesh;
-    bool mPrev = false;
-    bool rPrev = false;
-    int fbW = kInitWinW;
-    int fbH = kInitWinH;
+    bool wasMKeyDown = false;
+    bool wasRKeyDown = false;
+    int framebufferW = kInitWinW;
+    int framebufferH = kInitWinH;
     int colorW = 0;
     int colorH = 0;
     int depthW = 0;
@@ -99,7 +125,7 @@ struct Viewport {
     int h = 1;
 };
 
-Viewport fitAspectInRect(int x, int y, int w, int h, float aspect) {
+Viewport computeAspectViewport(int x, int y, int w, int h, float aspect) {
     Viewport vp{x, y, std::max(1, w), std::max(1, h)};
     if(aspect <= 0.0f) return vp;
     const float rectAspect = static_cast<float>(vp.w) / static_cast<float>(vp.h);
@@ -156,7 +182,7 @@ void drawText2D(const Viewport &vp, float normX, float normY, const std::string 
 }
 #endif
 
-std::string obFormatToText(OBFormat fmt) {
+std::string toFormatText(OBFormat fmt) {
     switch(fmt) {
     case OB_FORMAT_RGB: return "RGB";
     case OB_FORMAT_BGR: return "BGR";
@@ -168,12 +194,75 @@ std::string obFormatToText(OBFormat fmt) {
     }
 }
 
+float degreesToRadians(float degree) {
+    return degree * kPi / 180.0f;
+}
+
+bool isCursorInsidePointPane(const AppState &state, double cursorX) {
+    return cursorX >= (state.framebufferW * kPointPaneStartRatio);
+}
+
+std::shared_ptr<ob::FrameSet> getAlignedFrameSet(
+    const std::shared_ptr<ob::FrameSet> &rawFrameSet,
+    const std::shared_ptr<ob::Align> &align) {
+    if(!rawFrameSet) return nullptr;
+    try {
+        auto aligned = align ? align->process(rawFrameSet) : rawFrameSet;
+        auto alignedFrameSet = aligned ? aligned->as<ob::FrameSet>() : nullptr;
+        return alignedFrameSet ? alignedFrameSet : rawFrameSet;
+    } catch(...) {
+        return rawFrameSet;
+    }
+}
+
+void tryFetchCameraParam(const std::shared_ptr<ob::Pipeline> &pipeline, bool &cameraParamReady, OBCameraParam &cameraParam) {
+    if(cameraParamReady) return;
+    try {
+        cameraParam = pipeline->getCameraParam();
+        cameraParamReady = true;
+    } catch(...) {
+        cameraParamReady = false;
+    }
+}
+
+void cyclePointRenderMode(PointRenderMode &mode) {
+    if(mode == PointRenderMode::GpuMesh) mode = PointRenderMode::GpuPoint;
+    else if(mode == PointRenderMode::GpuPoint) mode = PointRenderMode::CpuPoint;
+    else mode = PointRenderMode::GpuMesh;
+}
+
+bool isExitKeyPressed(GLFWwindow *window) {
+    return glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS ||
+           glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS;
+}
+
+void updateFramebufferSize(GLFWwindow *window, AppState &state) {
+    glfwGetFramebufferSize(window, &state.framebufferW, &state.framebufferH);
+    state.framebufferW = std::max(1, state.framebufferW);
+    state.framebufferH = std::max(1, state.framebufferH);
+}
+
+void handleViewerHotkeys(GLFWwindow *window, AppState &state) {
+    const bool isMDown = glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS;
+    const bool isRDown = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS;
+    if(isMDown && !state.wasMKeyDown) cyclePointRenderMode(state.pointMode);
+    if(isRDown && !state.wasRKeyDown) state.view = ViewerControl{};
+    state.wasMKeyDown = isMDown;
+    state.wasRKeyDown = isRDown;
+}
+
+int estimateDecimatedPointCount(const GpuMesh &mesh, int targetPoints) {
+    int decimation = 1;
+    while(mesh.points / (decimation * decimation) > targetPoints) ++decimation;
+    return std::max(1, mesh.points / (decimation * decimation));
+}
+
 void onMouseButton(GLFWwindow *window, int button, int action, int) {
     auto *s = reinterpret_cast<AppState *>(glfwGetWindowUserPointer(window));
     if(!s) return;
     double x = 0.0, y = 0.0;
     glfwGetCursorPos(window, &x, &y);
-    const bool inPointPane = (x >= (s->fbW * 2.0 / 3.0));
+    const bool inPointPane = isCursorInsidePointPane(*s, x);
     if(!inPointPane) return;
     if(button == GLFW_MOUSE_BUTTON_LEFT) {
         s->mouse.rotating = (action == GLFW_PRESS);
@@ -196,9 +285,9 @@ void onCursorPos(GLFWwindow *window, double x, double y) {
     const double dx = x - s->mouse.lastX;
     const double dy = y - s->mouse.lastY;
     if(s->mouse.rotating) {
-        s->view.yawDeg += static_cast<float>(dx * 0.35);
-        s->view.pitchDeg += static_cast<float>(dy * 0.25);
-        s->view.pitchDeg = std::clamp(s->view.pitchDeg, -89.0f, 89.0f);
+        s->view.yawDeg += static_cast<float>(dx * kYawSensitivity);
+        s->view.pitchDeg += static_cast<float>(dy * kPitchSensitivity);
+        s->view.pitchDeg = std::clamp(s->view.pitchDeg, -kPitchClampDeg, kPitchClampDeg);
     } else if(s->mouse.panning) {
         s->view.panX += static_cast<float>(dx);
         s->view.panY += static_cast<float>(dy);
@@ -212,12 +301,12 @@ void onScroll(GLFWwindow *window, double, double yoffset) {
     if(!s) return;
     double x = 0.0, y = 0.0;
     glfwGetCursorPos(window, &x, &y);
-    if(x < (s->fbW * 2.0 / 3.0)) return;
-    float ratio = 1.0f + static_cast<float>(yoffset) / 10.0f;
-    s->view.zoom = std::clamp(s->view.zoom * ratio, 0.35f, 4.0f);
+    if(!isCursorInsidePointPane(*s, x)) return;
+    const float zoomRatio = 1.0f + static_cast<float>(yoffset) * kZoomStepScale;
+    s->view.zoom = std::clamp(s->view.zoom * zoomRatio, kZoomMin, kZoomMax);
 }
 
-bool colorFrameToRgbBytes(const std::shared_ptr<ob::VideoFrame> &frame, std::vector<uint8_t> &out, int &w, int &h) {
+bool convertColorFrameToRgb(const std::shared_ptr<ob::VideoFrame> &frame, std::vector<uint8_t> &out, int &w, int &h) {
     if(!frame) return false;
     w = frame->width();
     h = frame->height();
@@ -242,7 +331,7 @@ bool colorFrameToRgbBytes(const std::shared_ptr<ob::VideoFrame> &frame, std::vec
     return false;
 }
 
-bool depthToPseudoRgb(const std::shared_ptr<ob::DepthFrame> &frame, std::vector<uint8_t> &out, int &w, int &h) {
+bool convertDepthFrameToPseudoRgb(const std::shared_ptr<ob::DepthFrame> &frame, std::vector<uint8_t> &out, int &w, int &h) {
     if(!frame) return false;
     if(frame->format() != OB_FORMAT_Y16 && frame->format() != OB_FORMAT_Z16) return false;
     w = frame->width();
@@ -265,7 +354,7 @@ bool depthToPseudoRgb(const std::shared_ptr<ob::DepthFrame> &frame, std::vector<
                 out[rgb + 2] = 0;
                 continue;
             }
-            float t = std::clamp((zMm - 250.0f) / 4750.0f, 0.0f, 1.0f);
+            float t = std::clamp((zMm - kDepthPseudoMinMm) / kDepthPseudoRangeMm, 0.0f, 1.0f);
             const uint8_t r = static_cast<uint8_t>(255.0f * (1.0f - t));
             const uint8_t g = static_cast<uint8_t>(255.0f * std::abs(0.5f - t) * 2.0f);
             const uint8_t b = static_cast<uint8_t>(255.0f * t);
@@ -277,7 +366,7 @@ bool depthToPseudoRgb(const std::shared_ptr<ob::DepthFrame> &frame, std::vector<
     return true;
 }
 
-bool buildMeshFromDepthColor(
+bool rebuildMeshFromAlignedDepthColor(
     const std::shared_ptr<ob::DepthFrame> &depthFrame,
     const std::vector<uint8_t> &rgb,
     int colorW,
@@ -298,7 +387,7 @@ bool buildMeshFromDepthColor(
     const float cx = std::fabs(cameraParam.depthIntrinsic.cx) > 1e-6f ? cameraParam.depthIntrinsic.cx : (w * 0.5f);
     const float cy = std::fabs(cameraParam.depthIntrinsic.cy) > 1e-6f ? cameraParam.depthIntrinsic.cy : (h * 0.5f);
 
-    const int step = 6;
+    const int step = kMeshSamplingStep;
     const int cols = (w + step - 1) / step;
     const int rows = (h + step - 1) / step;
     std::vector<int32_t> gridToVertex(static_cast<size_t>(rows * cols), -1);
@@ -312,7 +401,7 @@ bool buildMeshFromDepthColor(
             const uint16_t d = depthRaw[didx];
             if(d == 0) continue;
             const float z = d * depthScaleMm * 0.001f;
-            if(!std::isfinite(z) || z <= 0.12f || z > 12.0f) continue;
+            if(!std::isfinite(z) || z <= kMeshMinDepthMeters || z > kMeshMaxDepthMeters) continue;
             const float x = (px - cx) * z / fx;
             const float y = (py - cy) * z / fy;
             if(!std::isfinite(x) || !std::isfinite(y)) continue;
@@ -362,7 +451,7 @@ bool buildMeshFromDepthColor(
     return true;
 }
 
-GLuint createRgbTexture() {
+GLuint createRgbGlTexture() {
     GLuint tex = 0;
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
@@ -381,7 +470,7 @@ void uploadRgbTexture(GLuint tex, const std::vector<uint8_t> &rgb, int w, int h)
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-const char *pointModeText(PointRenderMode mode) {
+const char *toPointModeText(PointRenderMode mode) {
     switch(mode) {
     case PointRenderMode::GpuMesh: return "GPU MESH";
     case PointRenderMode::GpuPoint: return "GPU POINT";
@@ -390,9 +479,9 @@ const char *pointModeText(PointRenderMode mode) {
     }
 }
 
-void rotateYawPitch(float x, float y, float z, float yawDeg, float pitchDeg, float &ox, float &oy, float &oz) {
-    const float yaw = yawDeg * 3.1415926535f / 180.0f;
-    const float pitch = pitchDeg * 3.1415926535f / 180.0f;
+void rotateByYawPitch(float x, float y, float z, float yawDeg, float pitchDeg, float &ox, float &oy, float &oz) {
+    const float yaw = degreesToRadians(yawDeg);
+    const float pitch = degreesToRadians(pitchDeg);
     const float cy = std::cos(yaw), sy = std::sin(yaw);
     const float cx = std::cos(pitch), sx = std::sin(pitch);
 
@@ -406,25 +495,29 @@ void rotateYawPitch(float x, float y, float z, float yawDeg, float pitchDeg, flo
     oz = sx * y1 + cx * z1;
 }
 
-bool buildCpuPointPreview(const AppState &s, int w, int h, std::vector<uint8_t> &rgbOut) {
+void applyViewTransform(const ViewerControl &view, float &x, float &y, float &z) {
+    rotateByYawPitch(x, y, z, view.yawDeg, view.pitchDeg, x, y, z);
+    x += view.panX * kPanToWorldScale;
+    y += -view.panY * kPanToWorldScale;
+    z += kCameraBaseOffsetZ;
+}
+
+bool renderCpuPointPanelImage(const AppState &s, int w, int h, std::vector<uint8_t> &rgbOut) {
     if(w <= 0 || h <= 0 || !s.mesh.hasData || s.mesh.points <= 0) return false;
     rgbOut.assign(static_cast<size_t>(w) * static_cast<size_t>(h) * 3u, 0);
     std::vector<float> zbuf(static_cast<size_t>(w) * static_cast<size_t>(h), 1e9f);
 
     const float aspect = static_cast<float>(w) / static_cast<float>(h);
-    const float fovDeg = 55.0f / std::clamp(s.view.zoom, 0.35f, 4.0f);
-    const float tanHalf = std::tan((fovDeg * 3.1415926535f / 180.0f) * 0.5f);
+    const float fovDeg = kBaseFovDeg / std::clamp(s.view.zoom, kZoomMin, kZoomMax);
+    const float tanHalf = std::tan(degreesToRadians(fovDeg) * 0.5f);
 
     for(int i = 0; i < s.mesh.points; ++i) {
         const size_t p = static_cast<size_t>(i) * 3u;
         float x = s.mesh.xyz[p + 0];
         float y = s.mesh.xyz[p + 1];
         float z = s.mesh.xyz[p + 2];
-        rotateYawPitch(x, y, z, s.view.yawDeg, s.view.pitchDeg, x, y, z);
-        x += s.view.panX * 0.0008f;
-        y += -s.view.panY * 0.0008f;
-        z += -1.2f;
-        if(z >= -0.05f || z <= -30.0f) continue;
+        applyViewTransform(s.view, x, y, z);
+        if(z >= -kNearClipZ || z <= -kFarClipZ) continue;
 
         const float invZ = 1.0f / (-z);
         const float nx = (x * invZ) / (tanHalf * aspect);
@@ -446,11 +539,8 @@ bool buildCpuPointPreview(const AppState &s, int w, int h, std::vector<uint8_t> 
 
     auto projectToScreen = [&](float wx, float wy, float wz, int &sx, int &sy) -> bool {
         float x = wx, y = wy, z = wz;
-        rotateYawPitch(x, y, z, s.view.yawDeg, s.view.pitchDeg, x, y, z);
-        x += s.view.panX * 0.0008f;
-        y += -s.view.panY * 0.0008f;
-        z += -1.2f;
-        if(z >= -0.05f || z <= -30.0f) return false;
+        applyViewTransform(s.view, x, y, z);
+        if(z >= -kNearClipZ || z <= -kFarClipZ) return false;
         const float invZ = 1.0f / (-z);
         const float nx = (x * invZ) / (tanHalf * aspect);
         const float ny = (y * invZ) / tanHalf;
@@ -512,9 +602,9 @@ bool buildCpuPointPreview(const AppState &s, int w, int h, std::vector<uint8_t> 
     };
 
     // GPU表示と同じガイド: 床グリッド(XZ) + XYZ軸
-    const float gridY = -0.55f;
-    const float gridHalf = 1.2f;
-    const float step = 0.1f;
+    const float gridY = kGridY;
+    const float gridHalf = kGridHalfExtent;
+    const float step = kGridStep;
     for(float p = -gridHalf; p <= gridHalf + 1e-6f; p += step) {
         const bool major = std::fabs(std::fmod(std::fabs(p), 0.5f)) < 1e-4f;
         const uint8_t c = static_cast<uint8_t>(major ? 84 : 52);
@@ -522,15 +612,15 @@ bool buildCpuPointPreview(const AppState &s, int w, int h, std::vector<uint8_t> 
         drawWorldLine(p, gridY, -gridHalf, p, gridY, gridHalf, c, c, c, 48);
     }
 
-    drawWorldLine(0.0f, gridY, 0.0f, 0.5f, gridY, 0.0f, 255, 50, 50, 20);        // X
-    drawWorldLine(0.0f, gridY, 0.0f, 0.0f, gridY + 0.5f, 0.0f, 50, 255, 50, 20); // Y
-    drawWorldLine(0.0f, gridY, 0.0f, 0.0f, gridY, -0.5f, 50, 120, 255, 20);      // Z
+    drawWorldLine(0.0f, gridY, 0.0f, kAxisLength, gridY, 0.0f, 255, 50, 50, 20);              // X
+    drawWorldLine(0.0f, gridY, 0.0f, 0.0f, gridY + kAxisLength, 0.0f, 50, 255, 50, 20);       // Y
+    drawWorldLine(0.0f, gridY, 0.0f, 0.0f, gridY, -kAxisLength, 50, 120, 255, 20);            // Z
 
     return true;
 }
 
-Viewport drawTexturePanel(GLuint tex, int x, int y, int w, int h, float targetAspect = 16.0f / 9.0f) {
-    Viewport vp = fitAspectInRect(x, y, w, h, targetAspect);
+Viewport drawTexturePane(GLuint tex, int x, int y, int w, int h, float targetAspect = kPanelAspectRatio) {
+    Viewport vp = computeAspectViewport(x, y, w, h, targetAspect);
     glViewport(vp.x, vp.y, vp.w, vp.h);
     glDisable(GL_DEPTH_TEST);
     glMatrixMode(GL_PROJECTION);
@@ -556,31 +646,31 @@ Viewport drawTexturePanel(GLuint tex, int x, int y, int w, int h, float targetAs
     return vp;
 }
 
-Viewport drawPointPanel(const AppState &s, int x, int y, int w, int h, float targetAspect = 16.0f / 9.0f) {
-    Viewport vp = fitAspectInRect(x, y, w, h, targetAspect);
+Viewport drawPointPane(const AppState &s, int x, int y, int w, int h, float targetAspect = kPanelAspectRatio) {
+    Viewport vp = computeAspectViewport(x, y, w, h, targetAspect);
     glViewport(vp.x, vp.y, vp.w, vp.h);
     glEnable(GL_DEPTH_TEST);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     const float aspect = static_cast<float>(vp.w) / static_cast<float>(std::max(1, vp.h));
-    const float nearZ = 0.05f;
-    const float farZ = 30.0f;
-    const float fovDeg = 55.0f / std::clamp(s.view.zoom, 0.35f, 4.0f);
-    const float top = nearZ * std::tan((fovDeg * 3.1415926535f / 180.0f) * 0.5f);
+    const float nearZ = kNearClipZ;
+    const float farZ = kFarClipZ;
+    const float fovDeg = kBaseFovDeg / std::clamp(s.view.zoom, kZoomMin, kZoomMax);
+    const float top = nearZ * std::tan(degreesToRadians(fovDeg) * 0.5f);
     const float right = top * aspect;
     glFrustum(-right, right, -top, top, nearZ, farZ);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
-    glTranslatef(s.view.panX * 0.0008f, -s.view.panY * 0.0008f, -1.2f);
+    glTranslatef(s.view.panX * kPanToWorldScale, -s.view.panY * kPanToWorldScale, kCameraBaseOffsetZ);
     glRotatef(s.view.pitchDeg, 1.0f, 0.0f, 0.0f);
     glRotatef(s.view.yawDeg, 0.0f, 1.0f, 0.0f);
 
     // Unity風の参照ガイド: 床グリッド(XZ) + XYZ軸ライン
     {
-        const float gridY = -0.55f;
-        const float gridHalf = 1.2f;
-        const float step = 0.1f;
+        const float gridY = kGridY;
+        const float gridHalf = kGridHalfExtent;
+        const float step = kGridStep;
         glLineWidth(1.0f);
         glBegin(GL_LINES);
         for(float p = -gridHalf; p <= gridHalf + 1e-6f; p += step) {
@@ -594,7 +684,7 @@ Viewport drawPointPanel(const AppState &s, int x, int y, int w, int h, float tar
         }
 
         // XYZ軸: X=赤, Y=緑, Z=青
-        const float axisLen = 0.5f;
+        const float axisLen = kAxisLength;
         glColor3f(1.0f, 0.20f, 0.20f);
         glVertex3f(0.0f, gridY, 0.0f);
         glVertex3f(axisLen, gridY, 0.0f);
@@ -632,7 +722,7 @@ Viewport drawPointPanel(const AppState &s, int x, int y, int w, int h, float tar
     return vp;
 }
 
-int runCpuFallbackLoop(const std::shared_ptr<ob::Pipeline> &pipeline, const std::shared_ptr<ob::Align> &align) {
+int runCpuFallbackMode(const std::shared_ptr<ob::Pipeline> &pipeline, const std::shared_ptr<ob::Align> &align) {
     std::cout << "[Fallback] OpenGL unavailable. Running CPU fallback mode (no GPU viewer)." << std::endl;
     std::cout << "[Fallback] Press Q or ESC in this console to exit." << std::endl;
 
@@ -655,39 +745,24 @@ int runCpuFallbackLoop(const std::shared_ptr<ob::Pipeline> &pipeline, const std:
 #endif
         auto fs = pipeline->waitForFrames(50);
         if(!fs) continue;
-        std::shared_ptr<ob::FrameSet> alignedFrameset;
-        try {
-            auto aligned = align ? align->process(fs) : fs;
-            alignedFrameset = aligned ? aligned->as<ob::FrameSet>() : nullptr;
-        } catch(...) {
-            alignedFrameset = nullptr;
-        }
-        if(!alignedFrameset) alignedFrameset = fs;
+        auto alignedFrameset = getAlignedFrameSet(fs, align);
+        if(!alignedFrameset) continue;
 
         auto colorFrame = alignedFrameset->colorFrame();
         auto depthFrame = alignedFrameset->depthFrame();
 
-        if(!cameraParamReady) {
-            try {
-                cameraParam = pipeline->getCameraParam();
-                cameraParamReady = true;
-            } catch(...) {
-                cameraParamReady = false;
-            }
-        }
+        tryFetchCameraParam(pipeline, cameraParamReady, cameraParam);
 
-        if(colorFrame && colorFrameToRgbBytes(colorFrame, rgb, rgbW, rgbH)) {
+        if(colorFrame && convertColorFrameToRgb(colorFrame, rgb, rgbW, rgbH)) {
             fpsColor.tick();
         }
-        if(depthFrame && depthToPseudoRgb(depthFrame, depthPseudo, depthW, depthH)) {
+        if(depthFrame && convertDepthFrameToPseudoRgb(depthFrame, depthPseudo, depthW, depthH)) {
             fpsDepth.tick();
         }
         if(colorFrame && depthFrame && cameraParamReady && !rgb.empty()) {
-            if(buildMeshFromDepthColor(depthFrame, rgb, rgbW, rgbH, cameraParam, mesh)) {
+            if(rebuildMeshFromAlignedDepthColor(depthFrame, rgb, rgbW, rgbH, cameraParam, mesh)) {
                 // CPUフォールバックは間引き前提で表示相当点数を維持
-                int decim = 1;
-                while(mesh.points / (decim * decim) > 6000) ++decim;
-                drawPoints = std::max(1, mesh.points / (decim * decim));
+                drawPoints = estimateDecimatedPointCount(mesh, kCpuFallbackTargetPoints);
                 fpsPoint.tick();
             }
         }
@@ -721,7 +796,7 @@ int main() try {
 
     if(!glfwInit()) {
         std::cerr << "GLFW init failed. Switching to CPU fallback." << std::endl;
-        const int ret = runCpuFallbackLoop(pipeline, align);
+        const int ret = runCpuFallbackMode(pipeline, align);
         pipeline->stop();
         return ret;
     }
@@ -731,7 +806,7 @@ int main() try {
     if(!window) {
         std::cerr << "GLFW window create failed. Switching to CPU fallback." << std::endl;
         glfwTerminate();
-        const int ret = runCpuFallbackLoop(pipeline, align);
+        const int ret = runCpuFallbackMode(pipeline, align);
         pipeline->stop();
         return ret;
     }
@@ -747,9 +822,9 @@ int main() try {
     glfwSetCursorPosCallback(window, onCursorPos);
     glfwSetScrollCallback(window, onScroll);
 
-    GLuint texRgb = createRgbTexture();
-    GLuint texDepth = createRgbTexture();
-    GLuint texPointCpu = createRgbTexture();
+    GLuint texRgb = createRgbGlTexture();
+    GLuint texDepth = createRgbGlTexture();
+    GLuint texPointCpu = createRgbGlTexture();
 
     std::vector<uint8_t> rgb;
     std::vector<uint8_t> depthPseudo;
@@ -766,43 +841,30 @@ int main() try {
     while(!glfwWindowShouldClose(window)) {
         auto fs = pipeline->waitForFrames(100);
         if(fs) {
-            std::shared_ptr<ob::FrameSet> alignedFrameset;
-            try {
-                auto aligned = align->process(fs);
-                alignedFrameset = aligned ? aligned->as<ob::FrameSet>() : nullptr;
-            } catch(...) {
-                alignedFrameset = nullptr;
-            }
-            if(!alignedFrameset) alignedFrameset = fs;
+            auto alignedFrameset = getAlignedFrameSet(fs, align);
+            if(!alignedFrameset) continue;
 
             auto colorFrame = alignedFrameset->colorFrame();
             auto depthFrame = alignedFrameset->depthFrame();
 
-            if(!cameraParamReady) {
-                try {
-                    cameraParam = pipeline->getCameraParam();
-                    cameraParamReady = true;
-                } catch(...) {
-                    cameraParamReady = false;
-                }
-            }
+            tryFetchCameraParam(pipeline, cameraParamReady, cameraParam);
 
-            if(colorFrame && colorFrameToRgbBytes(colorFrame, rgb, rgbW, rgbH)) {
+            if(colorFrame && convertColorFrameToRgb(colorFrame, rgb, rgbW, rgbH)) {
                 uploadRgbTexture(texRgb, rgb, rgbW, rgbH);
                 fpsColor.tick();
                 state.colorW = rgbW;
                 state.colorH = rgbH;
-                state.colorFmt = obFormatToText(colorFrame->format());
+                state.colorFmt = toFormatText(colorFrame->format());
             }
-            if(depthFrame && depthToPseudoRgb(depthFrame, depthPseudo, depthW, depthH)) {
+            if(depthFrame && convertDepthFrameToPseudoRgb(depthFrame, depthPseudo, depthW, depthH)) {
                 uploadRgbTexture(texDepth, depthPseudo, depthW, depthH);
                 fpsDepth.tick();
                 state.depthW = depthW;
                 state.depthH = depthH;
-                state.depthFmt = obFormatToText(depthFrame->format());
+                state.depthFmt = toFormatText(depthFrame->format());
             }
             if(colorFrame && depthFrame && cameraParamReady && !rgb.empty()) {
-                if(buildMeshFromDepthColor(depthFrame, rgb, rgbW, rgbH, cameraParam, state.mesh)) {
+                if(rebuildMeshFromAlignedDepthColor(depthFrame, rgb, rgbW, rgbH, cameraParam, state.mesh)) {
                     latestPoints = state.mesh.points;
                     fpsPoint.tick();
                 }
@@ -810,46 +872,28 @@ int main() try {
         }
 
         glfwPollEvents();
-
-        const bool mNow = glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS;
-        const bool rNow = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS;
-        if(mNow && !state.mPrev) {
-            if(state.pointMode == PointRenderMode::GpuMesh) state.pointMode = PointRenderMode::GpuPoint;
-            else if(state.pointMode == PointRenderMode::GpuPoint) state.pointMode = PointRenderMode::CpuPoint;
-            else state.pointMode = PointRenderMode::GpuMesh;
-        }
-        if(rNow && !state.rPrev) {
-            state.view = ViewerControl{};
-        }
-        state.mPrev = mNow;
-        state.rPrev = rNow;
-
-        if(glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) break;
-
-        glfwGetFramebufferSize(window, &state.fbW, &state.fbH);
-        state.fbW = std::max(1, state.fbW);
-        state.fbH = std::max(1, state.fbH);
+        handleViewerHotkeys(window, state);
+        if(isExitKeyPressed(window)) break;
+        updateFramebufferSize(window, state);
 
         glClearColor(0.05f, 0.04f, 0.06f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        const int paneW0 = state.fbW / 3;
-        const int paneW1 = state.fbW / 3;
-        const int paneW2 = state.fbW - paneW0 - paneW1;
+        const int paneW0 = state.framebufferW / 3;
+        const int paneW1 = state.framebufferW / 3;
+        const int paneW2 = state.framebufferW - paneW0 - paneW1;
 
-        Viewport vpRgb = drawTexturePanel(texRgb, 0, 0, paneW0, state.fbH, 16.0f / 9.0f);
-        Viewport vpDepth = drawTexturePanel(texDepth, paneW0, 0, paneW1, state.fbH, 16.0f / 9.0f);
+        Viewport vpRgb = drawTexturePane(texRgb, 0, 0, paneW0, state.framebufferH, kPanelAspectRatio);
+        Viewport vpDepth = drawTexturePane(texDepth, paneW0, 0, paneW1, state.framebufferH, kPanelAspectRatio);
 
         Viewport vpPoint;
         if(state.pointMode == PointRenderMode::CpuPoint) {
-            const int cpuW = 640;
-            const int cpuH = 360;
-            if(buildCpuPointPreview(state, cpuW, cpuH, cpuPointPreview)) {
-                uploadRgbTexture(texPointCpu, cpuPointPreview, cpuW, cpuH);
+            if(renderCpuPointPanelImage(state, kCpuPreviewW, kCpuPreviewH, cpuPointPreview)) {
+                uploadRgbTexture(texPointCpu, cpuPointPreview, kCpuPreviewW, kCpuPreviewH);
             }
-            vpPoint = drawTexturePanel(texPointCpu, paneW0 + paneW1, 0, paneW2, state.fbH, 16.0f / 9.0f);
+            vpPoint = drawTexturePane(texPointCpu, paneW0 + paneW1, 0, paneW2, state.framebufferH, kPanelAspectRatio);
         } else {
-            vpPoint = drawPointPanel(state, paneW0 + paneW1, 0, paneW2, state.fbH, 16.0f / 9.0f);
+            vpPoint = drawPointPane(state, paneW0 + paneW1, 0, paneW2, state.framebufferH, kPanelAspectRatio);
         }
 
 #ifdef _WIN32
@@ -864,7 +908,7 @@ int main() try {
         drawText2D(vpDepth, 0.02f, 0.96f, t2.str(), 1.0f, 1.0f, 1.0f);
 
         std::ostringstream t3a;
-        t3a << "XYZRGB " << pointModeText(state.pointMode)
+        t3a << "XYZRGB " << toPointModeText(state.pointMode)
             << " | pts " << state.mesh.points
             << " | FPS " << std::fixed << std::setprecision(1) << fpsPoint.fps;
         drawText2D(vpPoint, 0.02f, 0.96f, t3a.str(), 1.0f, 1.0f, 1.0f);
@@ -902,3 +946,5 @@ int main() try {
     std::cerr << "unknown exception" << std::endl;
     return 1;
 }
+
+
