@@ -25,6 +25,9 @@ if($running) {
 
 $cmd = "call `"$vcvars`" && `"$cmake`" -S `"$root`" -B `"$buildDir`" -G `"NMake Makefiles`" -DCMAKE_BUILD_TYPE=Release -DORBBEC_SDK_DIR=`"$orbbecSdkDir`" && `"$cmake`" --build `"$buildDir`" --config Release"
 cmd /c "$cmd"
+if($LASTEXITCODE -ne 0) {
+  throw "Build failed with exit code $LASTEXITCODE"
+}
 
 Write-Host ""
 Write-Host "Build completed." -ForegroundColor Green

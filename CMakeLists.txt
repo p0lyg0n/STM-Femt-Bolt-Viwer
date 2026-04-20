@@ -30,11 +30,32 @@ else()
   message(FATAL_ERROR "GLFW target not found. Install glfw3 or set ORBBEC_SAMPLE_VIEWER_GLFW_DIR to a valid glfw source directory.")
 endif()
 
-set(ORBBEC_LIB_DIR "${ORBBEC_SDK_DIR}/lib/win_x64")
-set(ORBBEC_LIB "${ORBBEC_LIB_DIR}/OrbbecSDK.lib")
-if(NOT EXISTS "${ORBBEC_LIB}")
-  message(FATAL_ERROR "OrbbecSDK.lib not found at ${ORBBEC_LIB}")
+set(ORBBEC_LIB "")
+set(ORBBEC_LIB_CANDIDATES
+  "${ORBBEC_SDK_DIR}/lib/win_x64/OrbbecSDK.lib"
+  "${ORBBEC_SDK_DIR}/lib/OrbbecSDK.lib"
+)
+foreach(CANDIDATE IN LISTS ORBBEC_LIB_CANDIDATES)
+  if(EXISTS "${CANDIDATE}")
+    set(ORBBEC_LIB "${CANDIDATE}")
+    break()
+  endif()
+endforeach()
+if(ORBBEC_LIB STREQUAL "")
+  message(FATAL_ERROR "OrbbecSDK.lib not found. Checked: ${ORBBEC_LIB_CANDIDATES}")
 endif()
+
+set(ORBBEC_RUNTIME_DIR "")
+set(ORBBEC_RUNTIME_CANDIDATES
+  "${ORBBEC_SDK_DIR}/bin"
+  "${ORBBEC_SDK_DIR}/lib/win_x64"
+)
+foreach(CANDIDATE IN LISTS ORBBEC_RUNTIME_CANDIDATES)
+  if(EXISTS "${CANDIDATE}/OrbbecSDK.dll")
+    set(ORBBEC_RUNTIME_DIR "${CANDIDATE}")
+    break()
+  endif()
+endforeach()
 
 add_executable(stm_femto_bolt_viewer_ver1
   src/main.cpp
@@ -50,12 +71,15 @@ target_link_libraries(stm_femto_bolt_viewer_ver1 PRIVATE
   opengl32
 )
 
-set(ORBBEC_RUNTIME_DLLS
-  "${ORBBEC_LIB_DIR}/OrbbecSDK.dll"
-  "${ORBBEC_LIB_DIR}/ob_usb.dll"
-  "${ORBBEC_LIB_DIR}/depthengine_2_0.dll"
-  "${ORBBEC_LIB_DIR}/live555.dll"
-)
+set(ORBBEC_RUNTIME_DLLS "")
+if(NOT ORBBEC_RUNTIME_DIR STREQUAL "")
+  set(ORBBEC_RUNTIME_DLLS
+    "${ORBBEC_RUNTIME_DIR}/OrbbecSDK.dll"
+    "${ORBBEC_RUNTIME_DIR}/ob_usb.dll"
+    "${ORBBEC_RUNTIME_DIR}/depthengine_2_0.dll"
+    "${ORBBEC_RUNTIME_DIR}/live555.dll"
+  )
+endif()
 
 foreach(DLL_PATH IN LISTS ORBBEC_RUNTIME_DLLS)
   if(EXISTS "${DLL_PATH}")
@@ -66,3 +90,13 @@ foreach(DLL_PATH IN LISTS ORBBEC_RUNTIME_DLLS)
     )
   endif()
 endforeach()
+
+if(NOT ORBBEC_RUNTIME_DIR STREQUAL "")
+  if(EXISTS "${ORBBEC_RUNTIME_DIR}/extensions")
+    add_custom_command(TARGET stm_femto_bolt_viewer_ver1 POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+      "${ORBBEC_RUNTIME_DIR}/extensions"
+      "$<TARGET_FILE_DIR:stm_femto_bolt_viewer_ver1>/extensions"
+    )
+  endif()
+endif()

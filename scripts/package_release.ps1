@@ -33,6 +33,12 @@ $requiredDlls = @(
   "live555.dll"
 )
 
+$sdkDir = $env:ORBBEC_SDK_DIR
+if([string]::IsNullOrWhiteSpace($sdkDir)) {
+  $sdkDir = "C:\Program Files\OrbbecSDK 2.7.6"
+}
+$sdkBinDir = Join-Path $sdkDir "bin"
+
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $stageRoot = Join-Path $OutputDir "stage"
 if(Test-Path $stageRoot) {
@@ -41,13 +47,25 @@ if(Test-Path $stageRoot) {
 New-Item -ItemType Directory -Force -Path $stageRoot | Out-Null
 
 Copy-Item -LiteralPath $exe -Destination $stageRoot
+Get-ChildItem -Path $buildPath -Filter *.dll -ErrorAction SilentlyContinue | ForEach-Object {
+  Copy-Item -LiteralPath $_.FullName -Destination $stageRoot -Force
+}
 foreach($dll in $requiredDlls) {
   $src = Join-Path $buildPath $dll
   if(Test-Path $src) {
     Copy-Item -LiteralPath $src -Destination $stageRoot
+  } elseif(Test-Path (Join-Path $sdkBinDir $dll)) {
+    Copy-Item -LiteralPath (Join-Path $sdkBinDir $dll) -Destination $stageRoot
   } else {
     Write-Warning "Missing runtime DLL: $dll"
   }
+}
+
+$buildExtDir = Join-Path $buildPath "extensions"
+if(Test-Path $buildExtDir) {
+  Copy-Item -Recurse -Force -LiteralPath $buildExtDir -Destination (Join-Path $stageRoot "extensions")
+} elseif(Test-Path (Join-Path $sdkBinDir "extensions")) {
+  Copy-Item -Recurse -Force -LiteralPath (Join-Path $sdkBinDir "extensions") -Destination (Join-Path $stageRoot "extensions")
 }
 
 $readmeTxt = @"
