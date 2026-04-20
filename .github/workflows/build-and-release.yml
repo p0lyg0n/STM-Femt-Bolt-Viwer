@@ -23,9 +23,14 @@ jobs:
         id: ver
         shell: powershell
         run: |
-          $v = (Get-Content VERSION -Raw).Trim()
-          if([string]::IsNullOrWhiteSpace($v)) { throw "VERSION is empty" }
-          "version=$v" >> $env:GITHUB_OUTPUT
+          if(Test-Path "VERSION") {
+            $v = (Get-Content "VERSION" | Select-Object -First 1).Trim()
+          } else {
+            $v = "0.01"
+          }
+          if([string]::IsNullOrWhiteSpace($v)) { $v = "0.01" }
+          if([string]::IsNullOrWhiteSpace($env:GITHUB_OUTPUT)) { throw "GITHUB_OUTPUT is empty" }
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$v"
 
       - name: Configure (NMake)
         shell: cmd
