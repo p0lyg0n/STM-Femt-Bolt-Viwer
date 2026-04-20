@@ -21,16 +21,12 @@ jobs:
 
       - name: Read version
         id: ver
-        shell: powershell
+        shell: cmd
         run: |
-          if(Test-Path "VERSION") {
-            $v = (Get-Content "VERSION" | Select-Object -First 1).Trim()
-          } else {
-            $v = "0.01"
-          }
-          if([string]::IsNullOrWhiteSpace($v)) { $v = "0.01" }
-          if([string]::IsNullOrWhiteSpace($env:GITHUB_OUTPUT)) { throw "GITHUB_OUTPUT is empty" }
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$v"
+          set VERSION=0.01
+          if exist VERSION set /p VERSION=<VERSION
+          if "%VERSION%"=="" set VERSION=0.01
+          echo version=%VERSION%>>%GITHUB_OUTPUT%
 
       - name: Configure (NMake)
         shell: cmd
@@ -43,14 +39,17 @@ jobs:
 
       - name: Package zip
         id: pkg
-        shell: powershell
+        shell: cmd
         run: |
-          $sha = "${{ github.sha }}".Substring(0,8)
-          $result = powershell -ExecutionPolicy Bypass -File .\scripts\package_release.ps1 -Version "${{ steps.ver.outputs.version }}" -BuildDir "build" -OutputDir "release" -Suffix $sha
-          $line = ($result | Where-Object { $_ -like "PACKAGE_PATH=*" })[-1]
-          if(-not $line) { throw "PACKAGE_PATH not found" }
-          $pkg = $line.Substring("PACKAGE_PATH=".Length)
-          "package_path=$pkg" >> $env:GITHUB_OUTPUT
+          set SHA8=%GITHUB_SHA:~0,8%
+          powershell -ExecutionPolicy Bypass -File .\scripts\package_release.ps1 -Version "${{ steps.ver.outputs.version }}" -BuildDir "build" -OutputDir "release" -Suffix "%SHA8%"
+          for /f %%F in ('dir /b /o-d "release\\STM-Femto-Bolt-Viewer-ver1_v${{ steps.ver.outputs.version }}_*_win64.zip"') do (
+            echo package_path=release/%%F>>%GITHUB_OUTPUT%
+            goto :done
+          )
+          echo Failed to find release zip
+          exit /b 1
+          :done
 
       - name: Release (auto main)
         if: startsWith(github.ref, 'refs/heads/main')
