@@ -28,14 +28,9 @@ jobs:
           if "%VERSION%"=="" set VERSION=0.01
           echo version=%VERSION%>>%GITHUB_OUTPUT%
 
-      - name: Configure (NMake)
+      - name: Build (project script)
         shell: cmd
-        run: >
-          cmake -S . -B build -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release -DORBBEC_SDK_DIR="%ORBBEC_SDK_DIR%"
-
-      - name: Build
-        shell: cmd
-        run: cmake --build build --config Release
+        run: powershell -ExecutionPolicy Bypass -File .\build.ps1
 
       - name: Package zip
         id: pkg
