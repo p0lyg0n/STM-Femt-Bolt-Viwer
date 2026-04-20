@@ -27,7 +27,9 @@ if(!(Test-Path $exe)) {
 }
 
 $requiredDlls = @(
-  "OrbbecSDK.dll",
+  "OrbbecSDK.dll"
+)
+$optionalDlls = @(
   "ob_usb.dll",
   "depthengine_2_0.dll",
   "live555.dll"
@@ -58,6 +60,14 @@ foreach($dll in $requiredDlls) {
     Copy-Item -LiteralPath (Join-Path $sdkBinDir $dll) -Destination $stageRoot
   } else {
     Write-Warning "Missing runtime DLL: $dll"
+  }
+}
+foreach($dll in $optionalDlls) {
+  $src = Join-Path $buildPath $dll
+  if(Test-Path $src) {
+    Copy-Item -LiteralPath $src -Destination $stageRoot
+  } elseif(Test-Path (Join-Path $sdkBinDir $dll)) {
+    Copy-Item -LiteralPath (Join-Path $sdkBinDir $dll) -Destination $stageRoot
   }
 }
 

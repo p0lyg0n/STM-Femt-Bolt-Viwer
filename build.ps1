@@ -23,6 +23,11 @@ if($running) {
   Start-Sleep -Milliseconds 300
 }
 
+if(Test-Path $buildDir) {
+  Remove-Item -Recurse -Force $buildDir
+}
+New-Item -ItemType Directory -Path $buildDir | Out-Null
+
 $cmd = "call `"$vcvars`" && `"$cmake`" -S `"$root`" -B `"$buildDir`" -G `"NMake Makefiles`" -DCMAKE_BUILD_TYPE=Release -DORBBEC_SDK_DIR=`"$orbbecSdkDir`" && `"$cmake`" --build `"$buildDir`" --config Release"
 cmd /c "$cmd"
 if($LASTEXITCODE -ne 0) {

@@ -15,7 +15,7 @@ endif()
 
 find_package(glfw3 CONFIG QUIET)
 
-set(ORBBEC_SAMPLE_VIEWER_GLFW_DIR "${CMAKE_SOURCE_DIR}/../_tmp_orbbec_sample_viewer/extern/glfw" CACHE PATH "Path to GLFW source from Orbbec Sample Viewer")
+set(ORBBEC_SAMPLE_VIEWER_GLFW_DIR "${CMAKE_SOURCE_DIR}/third_party/glfw" CACHE PATH "Path to GLFW source")
 if(NOT TARGET glfw AND NOT TARGET glfw3::glfw)
   if(EXISTS "${ORBBEC_SAMPLE_VIEWER_GLFW_DIR}/CMakeLists.txt")
     add_subdirectory("${ORBBEC_SAMPLE_VIEWER_GLFW_DIR}" "${CMAKE_BINARY_DIR}/_deps/glfw" EXCLUDE_FROM_ALL)
