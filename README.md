@@ -1,4 +1,4 @@
-# STM Femto Bolt Viewer ver1
+# STM Femto Bolt Viewer
 
 Sports Time Machine で Orbbec Femto Bolt を使うための、C++製の簡易ビューアーです。  
 RGB / Depth / XYZRGB（PointCloud）を1画面で確認し、まずは「現場で安定して動くこと」を最優先にしています。
