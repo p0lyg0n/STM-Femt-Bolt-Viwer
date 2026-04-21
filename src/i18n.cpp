@@ -143,9 +143,18 @@ const char *kStrings[(int)S::_Count][3] = {
     /* TipDevFps            */ {u8"実際にカメラから届いているフレームレート\nColor/Depth が設定値より低い場合は帯域や負荷を疑います",
                                 u8"Actual frame rate received from the camera.\nIf Color/Depth is below target, suspect USB bandwidth or CPU load.",
                                 u8"카메라로부터 실제로 수신 중인 프레임 레이트\n설정값보다 낮으면 USB 대역 또는 부하를 확인"},
-    /* TipDevTemp           */ {u8"カメラ内部温度 (°C)\nCPU: メイン基板 / IR: 赤外線センサー / LDM: レーザー",
-                                u8"Internal camera temperatures (°C)\nCPU: main board / IR: IR sensor / LDM: laser module",
-                                u8"카메라 내부 온도 (°C)\nCPU: 메인보드 / IR: IR 센서 / LDM: 레이저"},
+    /* TipDevTemp           */ {u8"カメラ内部温度 (°C)\n"
+                                u8"CPU: メイン基板\n"
+                                u8"IR : 赤外線受光センサー (撮影側 / Depth の元になる CMOS)\n"
+                                u8"LDM: 赤外線レーザー発光モジュール (照射側)",
+                                u8"Internal camera temperatures (°C)\n"
+                                u8"CPU: main board\n"
+                                u8"IR : IR imaging sensor (receiver side / CMOS that produces depth)\n"
+                                u8"LDM: Laser Diode Module (IR emitter side)",
+                                u8"카메라 내부 온도 (°C)\n"
+                                u8"CPU: 메인보드\n"
+                                u8"IR : IR 수광 센서 (촬영측 / Depth 생성 CMOS)\n"
+                                u8"LDM: 레이저 발광 모듈 (IR 조사측)"},
     /* TipDevRes            */ {u8"現在のストリーム解像度\n左側: Color, 右側: Depth (センサー生出力)",
                                 u8"Current stream resolution\nLeft: Color, Right: Depth (raw sensor)",
                                 u8"현재 스트림 해상도\n왼쪽: Color, 오른쪽: Depth (센서 원본)"},
