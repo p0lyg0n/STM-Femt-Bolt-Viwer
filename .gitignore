@@ -2,6 +2,7 @@ build/
 Log/
 release/
 _imgui_cache/
+_tmp_orbbec_sample_viewer/
 *.log
 *.err.log
 *.out.log
