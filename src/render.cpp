@@ -459,6 +459,11 @@ void renderSidebar(AppRuntime &runtime) {
 
         ImGui::Spacing();
 
+        // When the user picks 1024x1024 depth we also force FPS to 15 because
+        // Femto Bolt's WFOV unbinned mode does not support higher frame rates.
+        // The modal below informs the user of the automatic FPS change.
+        static bool openFps15Modal = false;
+
         char depthLabel[96];
         std::snprintf(depthLabel, sizeof(depthLabel), "%s%d x %d",
                       i18n::L(i18n::S::StreamDepthPrefix), s.depthW, s.depthH);
@@ -466,9 +471,34 @@ void renderSidebar(AppRuntime &runtime) {
             size_t idx = nextIndex(kDepthPresets, 4, s.depthW, s.depthH);
             s.depthW = kDepthPresets[idx].first;
             s.depthH = kDepthPresets[idx].second;
+            if(s.depthW == 1024 && s.depthH == 1024 && s.fps != 15) {
+                s.fps = 15;
+                openFps15Modal = true;
+            }
             applyStreamSettingsToAllSessions(runtime);
         }
         tooltipOnHover(i18n::L(i18n::S::TipStreamDepth));
+
+        if(openFps15Modal) {
+            ImGui::OpenPopup("##fps15_required");
+            openFps15Modal = false;
+        }
+        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        if(ImGui::BeginPopupModal(i18n::L(i18n::S::Depth1024ModalTitle), nullptr,
+                                  ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+            ImGui::TextUnformatted(i18n::L(i18n::S::Depth1024ModalMessage));
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            const float w = ImGui::GetContentRegionAvail().x;
+            const float btnW = 120.0f;
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (w - btnW) * 0.5f);
+            if(ImGui::Button(i18n::L(i18n::S::ModalOkButton), ImVec2(btnW, 0)) ||
+               ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
 
         ImGui::Spacing();
 

@@ -37,6 +37,15 @@ const char *kStrings[(int)S::_Count][3] = {
                                 u8"click to cycle preset / applied to all cameras",
                                 u8"클릭하여 다음 프리셋 / 모든 카메라 동시"},
 
+    // ---- Depth 1024 forces FPS=15 modal ----
+    /* Depth1024ModalTitle  */ {u8"FPS を 15 に変更しました",
+                                u8"FPS changed to 15",
+                                u8"FPS를 15로 변경했습니다"},
+    /* Depth1024ModalMessage*/ {u8"Femto Bolt の Depth 1024×1024 は 15 FPS のみ対応です。\nFPS を自動で 15 に変更しました。",
+                                u8"Femto Bolt's 1024×1024 depth mode only supports 15 FPS.\nFPS has been set to 15 automatically.",
+                                u8"Femto Bolt의 1024×1024 Depth는 15 FPS만 지원합니다.\nFPS를 자동으로 15로 변경했습니다."},
+    /* ModalOkButton        */ {u8"OK",                    u8"OK",                       u8"확인"},
+
     // ---- USB TOPOLOGY ----
     /* UsbEmpty             */ {u8"  (Empty)",            u8"  (Empty)",                u8"  (비어 있음)"},
     /* UsbShared            */ {u8"shared by multiple cameras",

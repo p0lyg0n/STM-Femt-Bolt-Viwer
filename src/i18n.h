@@ -29,6 +29,11 @@ enum class S {
     StreamFpsPrefix,
     StreamPresetHint,
 
+    // Modal: Depth 1024x1024 forces FPS=15
+    Depth1024ModalTitle,
+    Depth1024ModalMessage,
+    ModalOkButton,
+
     // USB TOPOLOGY
     UsbEmpty,
     UsbShared,
