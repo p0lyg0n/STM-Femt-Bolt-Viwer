@@ -98,6 +98,30 @@ void renderSessionSlot(
         // ImGui windows (notably tooltips) render ON TOP of them instead of being covered.
         ImDrawList *dl = ImGui::GetBackgroundDrawList();
 
+        // Shows a wrapped tooltip if the mouse is hovering the given screen-space rect.
+        // Used to attach HELP text to manually-drawn device header / pane labels.
+        // Suppressed while any mouse button is down so it does not interrupt
+        // interactive point-cloud drag / pan / zoom.
+        const auto hoverTip = [&](const ImVec2 &tl, const ImVec2 &br, const char *tip) {
+            if(!tip || !tip[0]) return;
+            if(ImGui::IsAnyMouseDown()) return;
+            if(ImGui::IsMouseHoveringRect({tl.x - 2.0f, tl.y - 2.0f},
+                                          {br.x + 2.0f, br.y + 2.0f}, false)) {
+                ImGui::BeginTooltip();
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 24.0f);
+                ImGui::TextUnformatted(tip);
+                ImGui::PopTextWrapPos();
+                ImGui::EndTooltip();
+            }
+        };
+        // AddText at `pos` plus a hover-rect tooltip sized to the drawn text.
+        const auto addTextTip = [&](ImFont *f, float sz, ImVec2 pos, ImU32 col,
+                                     const char *text, const char *tip) {
+            dl->AddText(f, sz, pos, col, text);
+            ImVec2 ts = f->CalcTextSizeA(sz, FLT_MAX, 0.0f, text);
+            hoverTip(pos, {pos.x + ts.x, pos.y + ts.y}, tip);
+        };
+
         // ---- Session header background ----
         const float hScreenY = (float)(runtime.framebufferH - slotY - slotH);
         const ImVec2 hTL = {(float)slotX,          hScreenY};
@@ -116,14 +140,22 @@ void renderSessionSlot(
             std::string devStr = "Device " + std::to_string(session->deviceIndex);
             ImVec2 devSz = fontL->CalcTextSizeA(30.0f, FLT_MAX, 0.0f, devStr.c_str());
             dl->AddText(fontL, 30.0f, {hx, hy}, IM_COL32(255, 228, 90, 255), devStr.c_str());
+            float devRight = hx + devSz.x;
             if(!session->serialNumber.empty()) {
                 std::string snStr = "SN: " + session->serialNumber;
+                ImVec2 snSz = fontS->CalcTextSizeA(20.0f, FLT_MAX, 0.0f, snStr.c_str());
                 dl->AddText(fontS, 20.0f, {hx + devSz.x + 14.0f, hy + 9.0f}, IM_COL32(150, 150, 165, 255), snStr.c_str());
+                devRight = hx + devSz.x + 14.0f + snSz.x;
             }
+            // Device + SN → TipDevIndex
+            hoverTip({hx, hy}, {devRight, hy + devSz.y}, i18n::L(i18n::S::TipDevIndex));
+
             const char *statusStr  = isDisconnected ? i18n::L(i18n::S::DevDisc) : i18n::L(i18n::S::DevLive);
             const ImU32 statusCol  = isDisconnected ? IM_COL32(240, 60, 60, 255) : IM_COL32(50, 220, 70, 255);
             ImVec2 stSz = fontS->CalcTextSizeA(20.0f, FLT_MAX, 0.0f, statusStr);
-            dl->AddText(fontS, 20.0f, {hBR.x - stSz.x - 14.0f, hy + 9.0f}, statusCol, statusStr);
+            const ImVec2 stPos = {hBR.x - stSz.x - 14.0f, hy + 9.0f};
+            dl->AddText(fontS, 20.0f, stPos, statusCol, statusStr);
+            hoverTip(stPos, {stPos.x + stSz.x, stPos.y + stSz.y}, i18n::L(i18n::S::TipDevStatus));
         }
         hy += lhL;
 
@@ -138,7 +170,7 @@ void renderSessionSlot(
             } else {
                 usbStr = i18n::L(i18n::S::DevUsbMissing);
             }
-            dl->AddText(fontS, 20.0f, {hx, hy}, IM_COL32(200, 200, 200, 255), usbStr.c_str());
+            addTextTip(fontS, 20.0f, {hx, hy}, IM_COL32(200, 200, 200, 255), usbStr.c_str(), i18n::L(i18n::S::TipDevUsb));
 
             OBAccelValue accel; bool imuOk;
             { std::lock_guard<std::mutex> g(session->imuMutex); accel = session->lastAccel; imuOk = session->imuReady; }
@@ -151,7 +183,7 @@ void renderSessionSlot(
             } else {
                 imuStr = i18n::L(i18n::S::DevImuWaiting);
             }
-            dl->AddText(fontS, 20.0f, {col2x, hy}, IM_COL32(170, 170, 180, 255), imuStr.c_str());
+            addTextTip(fontS, 20.0f, {col2x, hy}, IM_COL32(170, 170, 180, 255), imuStr.c_str(), i18n::L(i18n::S::TipDevImu));
         }
         hy += lhS;
 
@@ -160,7 +192,7 @@ void renderSessionSlot(
             std::ostringstream fpsSS;
             fpsSS << "FPS  Color:" << std::fixed << std::setprecision(1) << session->fpsColor.fps
                   << "  Depth:" << session->fpsDepth.fps;
-            dl->AddText(fontS, 20.0f, {hx, hy}, IM_COL32(90, 255, 115, 255), fpsSS.str().c_str());
+            addTextTip(fontS, 20.0f, {hx, hy}, IM_COL32(90, 255, 115, 255), fpsSS.str().c_str(), i18n::L(i18n::S::TipDevFps));
 
             float cpuT, irT, ldmT; bool tempOk;
             { std::lock_guard<std::mutex> g(session->tempMutex); cpuT = session->cpuTemp; irT = session->irTemp; ldmT = session->ldmTemp; tempOk = session->tempReady; }
@@ -173,7 +205,7 @@ void renderSessionSlot(
             } else {
                 tempStr = i18n::L(i18n::S::DevTempNoData);
             }
-            dl->AddText(fontS, 20.0f, {col2x, hy}, IM_COL32(170, 170, 180, 255), tempStr.c_str());
+            addTextTip(fontS, 20.0f, {col2x, hy}, IM_COL32(170, 170, 180, 255), tempStr.c_str(), i18n::L(i18n::S::TipDevTemp));
         }
         hy += lhS;
 
@@ -186,7 +218,7 @@ void renderSessionSlot(
                 resSS << "RES  " << state.colorW << "x" << state.colorH
                       << "  Depth: " << session->streamSettings.depthW << "x" << session->streamSettings.depthH;
             }
-            dl->AddText(fontS, 20.0f, {hx, hy}, IM_COL32(90, 255, 115, 255), resSS.str().c_str());
+            addTextTip(fontS, 20.0f, {hx, hy}, IM_COL32(90, 255, 115, 255), resSS.str().c_str(), i18n::L(i18n::S::TipDevRes));
         }
         hy += lhS;
 
@@ -195,14 +227,19 @@ void renderSessionSlot(
             std::ostringstream ptsSS;
             ptsSS << "PTS  " << session->latestPoints << " pts   "
                   << std::fixed << std::setprecision(1) << session->fpsPoint.fps << " fps";
-            dl->AddText(fontS, 20.0f, {hx, hy}, IM_COL32(90, 255, 115, 255), ptsSS.str().c_str());
+            addTextTip(fontS, 20.0f, {hx, hy}, IM_COL32(90, 255, 115, 255), ptsSS.str().c_str(), i18n::L(i18n::S::TipDevPts));
         }
 
         // ---- Pane labels (top-left of each pane) ----
-        const auto paneLabel = [&](const Viewport &vp, const std::string &txt, ImU32 col) {
+        // Hover detection covers the whole pane viewport so users can hover anywhere on
+        // the image to see what it represents.
+        const auto paneLabel = [&](const Viewport &vp, const std::string &txt, ImU32 col, const char *tip) {
             const float px = (float)vp.x + 5.0f;
             const float py = (float)(runtime.framebufferH - vp.y - vp.h) + 5.0f;
             dl->AddText(fontS, 20.0f, {px, py}, col, txt.c_str());
+            const float paneTop    = (float)(runtime.framebufferH - vp.y - vp.h);
+            const float paneBottom = (float)(runtime.framebufferH - vp.y);
+            hoverTip({(float)vp.x, paneTop}, {(float)(vp.x + vp.w), paneBottom}, tip);
         };
 
         std::ostringstream label1;
@@ -210,21 +247,21 @@ void renderSessionSlot(
         if(isDisconnected) { label1 << "--x-- --"; }
         else { label1 << state.colorW << "x" << state.colorH << " " << state.colorFmt; }
         label1 << "  FPS " << std::fixed << std::setprecision(1) << session->fpsColor.fps;
-        paneLabel(vpRgb, label1.str(), IM_COL32(255, 255, 255, 210));
+        paneLabel(vpRgb, label1.str(), IM_COL32(255, 255, 255, 210), i18n::L(i18n::S::TipPaneRgb));
 
         std::ostringstream label2;
         label2 << "DEPTH ";
         if(isDisconnected) { label2 << "--x-- --"; }
         else { label2 << session->streamSettings.depthW << "x" << session->streamSettings.depthH << " " << state.depthFmt; }
         label2 << "  FPS " << std::fixed << std::setprecision(1) << session->fpsDepth.fps;
-        paneLabel(vpDepth, label2.str(), IM_COL32(255, 255, 255, 210));
+        paneLabel(vpDepth, label2.str(), IM_COL32(255, 255, 255, 210), i18n::L(i18n::S::TipPaneDepth));
 
         std::ostringstream label3;
         if(isDisconnected)                                          { label3 << "POINT [XYZRGB]"; }
         else if(state.pointMode == PointRenderMode::GpuMesh)       { label3 << "MESH [XYZRGB]"; }
         else if(state.pointMode == PointRenderMode::GpuPoint)      { label3 << "POINT [XYZRGB]"; }
         else                                                        { label3 << "CPU POINT [XYZRGB]"; }
-        paneLabel(vpPoint, label3.str(), IM_COL32(255, 255, 255, 210));
+        paneLabel(vpPoint, label3.str(), IM_COL32(255, 255, 255, 210), i18n::L(i18n::S::TipPanePoint));
 
         std::ostringstream ptStat;
         ptStat << "pts " << session->latestPoints << "  FPS " << std::fixed << std::setprecision(1) << session->fpsPoint.fps;

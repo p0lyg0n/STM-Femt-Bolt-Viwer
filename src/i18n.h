@@ -60,6 +60,19 @@ enum class S {
     DevTempNoData,
     DevSharedSuffix,
 
+    // Device panel tooltips
+    TipDevIndex,
+    TipDevStatus,
+    TipDevUsb,
+    TipDevImu,
+    TipDevFps,
+    TipDevTemp,
+    TipDevRes,
+    TipDevPts,
+    TipPaneRgb,
+    TipPaneDepth,
+    TipPanePoint,
+
     // Device panel disconnection overlay
     DevDisconnected,
     DevCameraUnplugged,
