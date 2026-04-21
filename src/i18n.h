@@ -88,10 +88,8 @@ Lang getLang();
 void setLang(Lang l);
 const char *L(S key);
 
-const char *langCode(Lang l);   // "ja" | "en" | "ko"
-const char *langLabel(Lang l);  // "日本語" | "English" | "한국어"
-
-void loadPreferenceFromExeDir();
-void savePreferenceToExeDir();
+const char *langCode(Lang l);     // "ja" | "en" | "ko"
+Lang        langFromCode(const char *code);
+const char *langLabel(Lang l);    // "日本語" | "English" | "한국어"
 
 } // namespace i18n

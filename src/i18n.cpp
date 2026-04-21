@@ -1,19 +1,6 @@
 #include "i18n.h"
 
-#include <cstdio>
 #include <cstring>
-#include <fstream>
-#include <string>
-
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
 
 namespace i18n {
 
@@ -175,19 +162,10 @@ const char *kStrings[(int)S::_Count][3] = {
     /* DevWaitingReconnect  */ {u8"再接続を待機中",        u8"Waiting reconnect",        u8"재연결 대기 중"},
 };
 
-std::string prefFilePath() {
-#ifdef _WIN32
-    char buf[MAX_PATH];
-    DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
-    if(n == 0 || n >= MAX_PATH) return "settings.ini";
-    std::string p(buf, n);
-    const size_t sep = p.find_last_of("\\/");
-    if(sep == std::string::npos) return "settings.ini";
-    return p.substr(0, sep + 1) + "settings.ini";
-#else
-    return "settings.ini";
-#endif
-}
+} // namespace
+
+Lang getLang() { return g_lang; }
+void setLang(Lang l) { g_lang = l; }
 
 Lang langFromCode(const char *code) {
     if(!code) return Lang::Japanese;
@@ -195,11 +173,6 @@ Lang langFromCode(const char *code) {
     if(std::strcmp(code, "ko") == 0) return Lang::Korean;
     return Lang::Japanese;
 }
-
-} // namespace
-
-Lang getLang() { return g_lang; }
-void setLang(Lang l) { g_lang = l; }
 
 const char *L(S key) {
     const int idx = (int)key;
@@ -220,29 +193,6 @@ const char *langLabel(Lang l) {
         case Lang::Korean:  return u8"한국어";
         default:            return u8"日本語";
     }
-}
-
-void loadPreferenceFromExeDir() {
-    const std::string path = prefFilePath();
-    std::ifstream f(path);
-    if(!f.good()) return;
-    std::string line;
-    while(std::getline(f, line)) {
-        // trim CR
-        while(!line.empty() && (line.back() == '\r' || line.back() == '\n' || line.back() == ' ')) line.pop_back();
-        const std::string prefix = "lang=";
-        if(line.rfind(prefix, 0) == 0) {
-            g_lang = langFromCode(line.c_str() + prefix.size());
-            return;
-        }
-    }
-}
-
-void savePreferenceToExeDir() {
-    const std::string path = prefFilePath();
-    std::ofstream f(path, std::ios::trunc);
-    if(!f.good()) return;
-    f << "lang=" << langCode(g_lang) << "\n";
 }
 
 } // namespace i18n

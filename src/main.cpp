@@ -5,6 +5,7 @@
 #include "render.h"
 #include "input.h"
 #include "i18n.h"
+#include "app_settings.h"
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -91,7 +92,9 @@ int runCpuFallbackMode(const std::shared_ptr<ob::Pipeline> &pipeline, const std:
 int main() try {
     std::cout << "STM Femto Bolt Viewer unified GLFW window (no OpenCV UI)" << std::endl;
 
-    i18n::loadPreferenceFromExeDir();
+    // Load persisted user preferences (language + display mode + stream preset).
+    const app_settings::AppSettings loadedSettings = app_settings::load();
+    i18n::setLang(loadedSettings.lang);
 
     ob::Context context;
     auto deviceList = context.queryDeviceList();
@@ -104,6 +107,14 @@ int main() try {
     if(sessions.empty()) {
         std::cerr << "Failed to create camera sessions." << std::endl;
         return 1;
+    }
+
+    // Apply loaded stream preset to every session BEFORE startCameraSession so the
+    // pipeline starts with the last-used resolution/fps instead of the built-in defaults.
+    for(const auto &session : sessions) {
+        if(!session) continue;
+        session->streamSettings        = loadedSettings.stream;
+        session->viewState.pointMode   = loadedSettings.pointMode;
     }
 
     if(!glfwInit()) {
@@ -141,6 +152,7 @@ int main() try {
     glfwSwapBuffers(window);
 
     AppRuntime runtime;
+    runtime.streamSettings = loadedSettings.stream;
     {
         const char *v   = reinterpret_cast<const char *>(glGetString(GL_VENDOR));
         const char *r   = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
@@ -320,7 +332,14 @@ int main() try {
         }
     }
 
-    i18n::savePreferenceToExeDir();
+    {
+        app_settings::AppSettings saved;
+        saved.lang      = i18n::getLang();
+        saved.stream    = runtime.streamSettings;
+        saved.pointMode = sessions.empty() ? loadedSettings.pointMode
+                                           : sessions.front()->viewState.pointMode;
+        app_settings::save(saved);
+    }
 
     ImGui_ImplOpenGL2_Shutdown();
     ImGui_ImplGlfw_Shutdown();
