@@ -297,7 +297,7 @@ void pollDeviceTemperature(const std::shared_ptr<CameraSession> &session) {
     try {
         OBDeviceTemperature temp;
         uint32_t dataSize = sizeof(temp);
-        session->device->getStructuredData(OB_STRUCT_DEVICE_TEMPERATURE, &temp, &dataSize);
+        session->device->getStructuredData(OB_STRUCT_DEVICE_TEMPERATURE, reinterpret_cast<uint8_t *>(&temp), &dataSize);
         std::lock_guard<std::mutex> g(session->tempMutex);
         session->cpuTemp = temp.cpuTemp;
         session->irTemp = temp.irTemp;
