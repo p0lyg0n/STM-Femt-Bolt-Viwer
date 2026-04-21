@@ -2,12 +2,41 @@
 #include "input.h"
 #include "frame_processing.h"
 #include "camera_session.h"
+#include "i18n.h"
 
 #include <algorithm>
 #include <iomanip>
 #include <mutex>
 #include <sstream>
 #include <string>
+
+namespace {
+
+// Shows a wrapped tooltip when the preceding ImGui item is hovered.
+// Used to attach HELP text to buttons and section headers.
+void tooltipOnHover(const char *text) {
+    if(!ImGui::IsItemHovered() || !text || !text[0]) return;
+    ImGui::BeginTooltip();
+    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 24.0f);
+    ImGui::TextUnformatted(text);
+    ImGui::PopTextWrapPos();
+    ImGui::EndTooltip();
+}
+
+// A compact square toggle button used by the language switcher row.
+// Pressed state is drawn with a highlighted background so the current language is visible.
+bool langPillButton(const char *label, bool active, const ImVec2 &size) {
+    if(active) {
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.22f, 0.45f, 0.82f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.28f, 0.55f, 0.92f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.18f, 0.38f, 0.70f, 1.0f));
+    }
+    const bool pressed = ImGui::Button(label, size);
+    if(active) ImGui::PopStyleColor(3);
+    return pressed;
+}
+
+} // namespace
 
 void renderSessionSlot(
     const std::shared_ptr<CameraSession> &session,
@@ -89,7 +118,7 @@ void renderSessionSlot(
                 std::string snStr = "SN: " + session->serialNumber;
                 dl->AddText(fontS, 20.0f, {hx + devSz.x + 14.0f, hy + 9.0f}, IM_COL32(150, 150, 165, 255), snStr.c_str());
             }
-            const char *statusStr  = isDisconnected ? "● DISC" : "● LIVE";
+            const char *statusStr  = isDisconnected ? i18n::L(i18n::S::DevDisc) : i18n::L(i18n::S::DevLive);
             const ImU32 statusCol  = isDisconnected ? IM_COL32(240, 60, 60, 255) : IM_COL32(50, 220, 70, 255);
             ImVec2 stSz = fontS->CalcTextSizeA(20.0f, FLT_MAX, 0.0f, statusStr);
             dl->AddText(fontS, 20.0f, {hBR.x - stSz.x - 14.0f, hy + 9.0f}, statusCol, statusStr);
@@ -102,23 +131,25 @@ void renderSessionSlot(
             if(usbInfo) {
                 std::ostringstream uss;
                 uss << "USB: " << formatControllerDisplayName(usbTopology, usbInfo->controllerId, normalizeUsbControllerName(usbInfo->controllerName));
-                if(controllerSharedCount > 1) uss << " / shared " << controllerSharedCount;
+                if(controllerSharedCount > 1) uss << i18n::L(i18n::S::DevSharedSuffix) << controllerSharedCount;
                 usbStr = uss.str();
             } else {
-                usbStr = "USB: -";
+                usbStr = i18n::L(i18n::S::DevUsbMissing);
             }
             dl->AddText(fontS, 20.0f, {hx, hy}, IM_COL32(200, 200, 200, 255), usbStr.c_str());
 
             OBAccelValue accel; bool imuOk;
             { std::lock_guard<std::mutex> g(session->imuMutex); accel = session->lastAccel; imuOk = session->imuReady; }
-            std::ostringstream imuSS;
+            std::string imuStr;
             if(imuOk) {
+                std::ostringstream imuSS;
                 imuSS << "IMU X:" << std::fixed << std::setprecision(2) << accel.x
                       << " Y:" << accel.y << " Z:" << accel.z << " m/s2";
+                imuStr = imuSS.str();
             } else {
-                imuSS << "IMU: Waiting...";
+                imuStr = i18n::L(i18n::S::DevImuWaiting);
             }
-            dl->AddText(fontS, 20.0f, {col2x, hy}, IM_COL32(170, 170, 180, 255), imuSS.str().c_str());
+            dl->AddText(fontS, 20.0f, {col2x, hy}, IM_COL32(170, 170, 180, 255), imuStr.c_str());
         }
         hy += lhS;
 
@@ -131,14 +162,16 @@ void renderSessionSlot(
 
             float cpuT, irT, ldmT; bool tempOk;
             { std::lock_guard<std::mutex> g(session->tempMutex); cpuT = session->cpuTemp; irT = session->irTemp; ldmT = session->ldmTemp; tempOk = session->tempReady; }
-            std::ostringstream tempSS;
+            std::string tempStr;
             if(tempOk) {
+                std::ostringstream tempSS;
                 tempSS << "TEMP  CPU:" << std::fixed << std::setprecision(1) << cpuT
                        << "C  IR:" << irT << "C  LDM:" << ldmT << "C";
+                tempStr = tempSS.str();
             } else {
-                tempSS << "TEMP: --";
+                tempStr = i18n::L(i18n::S::DevTempNoData);
             }
-            dl->AddText(fontS, 20.0f, {col2x, hy}, IM_COL32(170, 170, 180, 255), tempSS.str().c_str());
+            dl->AddText(fontS, 20.0f, {col2x, hy}, IM_COL32(170, 170, 180, 255), tempStr.c_str());
         }
         hy += lhS;
 
@@ -214,9 +247,9 @@ void renderSessionSlot(
                 dl->AddText(fontS, 20.0f, {cx - sz2.x * 0.5f, cy - 4.0f},  IM_COL32(200, 200, 200, 255), l2);
                 dl->AddText(fontS, 20.0f, {cx - sz3.x * 0.5f, cy + 16.0f}, IM_COL32(175, 175, 175, 255), l3);
             };
-            discMsg(vpRgb,   "DISCONNECTED", "Camera unplugged", "Reconnects automatically");
-            discMsg(vpDepth, "DISCONNECTED", "DEPTH stopped",    "Waiting reconnect");
-            discMsg(vpPoint, "DISCONNECTED", "POINT stopped",    "Waiting reconnect");
+            discMsg(vpRgb,   i18n::L(i18n::S::DevDisconnected), i18n::L(i18n::S::DevCameraUnplugged), i18n::L(i18n::S::DevReconnectsAuto));
+            discMsg(vpDepth, i18n::L(i18n::S::DevDisconnected), i18n::L(i18n::S::DevDepthStopped),  i18n::L(i18n::S::DevWaitingReconnect));
+            discMsg(vpPoint, i18n::L(i18n::S::DevDisconnected), i18n::L(i18n::S::DevPointStopped),  i18n::L(i18n::S::DevWaitingReconnect));
         }
     }
 }
@@ -283,34 +316,63 @@ void renderSidebar(AppRuntime &runtime) {
     ImGui::SameLine();
     ImGui::PushFont(fontS);
     ImGui::TextDisabled("%.0f FPS", renderFps);
-    ImGui::TextDisabled("Monitor");
+    ImGui::TextDisabled("%s", i18n::L(i18n::S::SidebarMonitor));
     ImGui::PopFont();
+
+    //
+    // ===== Language switcher (JA / EN / KO) =====
+    //
+    ImGui::Spacing();
+    {
+        const i18n::Lang current = i18n::getLang();
+        const float avail = ImGui::GetContentRegionAvail().x;
+        const ImVec2 btnSize = ImVec2((avail - 12.0f) / 3.0f, 28.0f);
+
+        ImGui::PushFont(fontS);
+        if(langPillButton(i18n::langLabel(i18n::Lang::Japanese), current == i18n::Lang::Japanese, btnSize)) {
+            i18n::setLang(i18n::Lang::Japanese);
+        }
+        tooltipOnHover(i18n::L(i18n::S::TipLang));
+        ImGui::SameLine();
+        if(langPillButton(i18n::langLabel(i18n::Lang::English), current == i18n::Lang::English, btnSize)) {
+            i18n::setLang(i18n::Lang::English);
+        }
+        tooltipOnHover(i18n::L(i18n::S::TipLang));
+        ImGui::SameLine();
+        if(langPillButton(i18n::langLabel(i18n::Lang::Korean), current == i18n::Lang::Korean, btnSize)) {
+            i18n::setLang(i18n::Lang::Korean);
+        }
+        tooltipOnHover(i18n::L(i18n::S::TipLang));
+        ImGui::PopFont();
+    }
 
     drawSectionSeparator();
 
     //
     // ===== VIEW (display controls) =====
     //
-    ImGui::TextColored(kSectionHeaderCol, "VIEW");
+    ImGui::TextColored(kSectionHeaderCol, "%s", i18n::L(i18n::S::SectionView));
     {
         const PointRenderMode currentMode = runtime.sessions.empty()
             ? PointRenderMode::GpuMesh
             : runtime.sessions.front()->viewState.pointMode;
-        std::string modeLabel = std::string("表示モード: ") + toPointModeText(currentMode);
+        std::string modeLabel = std::string(i18n::L(i18n::S::ViewModePrefix)) + toPointModeText(currentMode);
         if(ImGui::Button(modeLabel.c_str(), ImVec2(-1, 36))) {
             cycleAllSessionsPointMode(runtime);
         }
+        tooltipOnHover(i18n::L(i18n::S::TipViewMode));
         ImGui::PushFont(fontS);
-        ImGui::TextDisabled("MESH → POINT → CPU POINT  (M)");
+        ImGui::TextDisabled("%s", i18n::L(i18n::S::ViewModeHint));
         ImGui::PopFont();
 
         ImGui::Spacing();
 
-        if(ImGui::Button("視点をリセット", ImVec2(-1, 36))) {
+        if(ImGui::Button(i18n::L(i18n::S::ViewResetBtn), ImVec2(-1, 36))) {
             resetAllSessionsView(runtime);
         }
+        tooltipOnHover(i18n::L(i18n::S::TipViewReset));
         ImGui::PushFont(fontS);
-        ImGui::TextDisabled("角度・ZOOM・パン 初期化  (R)");
+        ImGui::TextDisabled("%s", i18n::L(i18n::S::ViewResetHint));
         ImGui::PopFont();
     }
 
@@ -319,7 +381,7 @@ void renderSidebar(AppRuntime &runtime) {
     //
     // ===== STREAM (sensor resolution / fps presets) =====
     //
-    ImGui::TextColored(kSectionHeaderCol, "STREAM");
+    ImGui::TextColored(kSectionHeaderCol, "%s", i18n::L(i18n::S::SectionStream));
     {
         static const std::pair<int,int> kDepthPresets[] = {
             {320, 288}, {640, 576}, {512, 512}, {1024, 1024}
@@ -345,38 +407,43 @@ void renderSidebar(AppRuntime &runtime) {
 
         StreamSettings &s = runtime.streamSettings;
 
-        char depthLabel[64];
-        std::snprintf(depthLabel, sizeof(depthLabel), "Depth: %d x %d", s.depthW, s.depthH);
+        char depthLabel[96];
+        std::snprintf(depthLabel, sizeof(depthLabel), "%s%d x %d",
+                      i18n::L(i18n::S::StreamDepthPrefix), s.depthW, s.depthH);
         if(ImGui::Button(depthLabel, ImVec2(-1, 36))) {
             size_t idx = nextIndex(kDepthPresets, 4, s.depthW, s.depthH);
             s.depthW = kDepthPresets[idx].first;
             s.depthH = kDepthPresets[idx].second;
             applyStreamSettingsToAllSessions(runtime);
         }
+        tooltipOnHover(i18n::L(i18n::S::TipStreamDepth));
 
         ImGui::Spacing();
 
-        char colorLabel[64];
-        std::snprintf(colorLabel, sizeof(colorLabel), "Color: %d x %d", s.colorW, s.colorH);
+        char colorLabel[96];
+        std::snprintf(colorLabel, sizeof(colorLabel), "%s%d x %d",
+                      i18n::L(i18n::S::StreamColorPrefix), s.colorW, s.colorH);
         if(ImGui::Button(colorLabel, ImVec2(-1, 36))) {
             size_t idx = nextIndex(kColorPresets, 3, s.colorW, s.colorH);
             s.colorW = kColorPresets[idx].first;
             s.colorH = kColorPresets[idx].second;
             applyStreamSettingsToAllSessions(runtime);
         }
+        tooltipOnHover(i18n::L(i18n::S::TipStreamColor));
 
         ImGui::Spacing();
 
-        char fpsLabel[32];
-        std::snprintf(fpsLabel, sizeof(fpsLabel), "FPS: %d", s.fps);
+        char fpsLabel[48];
+        std::snprintf(fpsLabel, sizeof(fpsLabel), "%s%d", i18n::L(i18n::S::StreamFpsPrefix), s.fps);
         if(ImGui::Button(fpsLabel, ImVec2(-1, 36))) {
             size_t idx = nextFpsIndex(s.fps);
             s.fps = kFpsPresets[idx];
             applyStreamSettingsToAllSessions(runtime);
         }
+        tooltipOnHover(i18n::L(i18n::S::TipStreamFps));
 
         ImGui::PushFont(fontS);
-        ImGui::TextDisabled("クリックで次のプリセット / 全カメラ同時");
+        ImGui::TextDisabled("%s", i18n::L(i18n::S::StreamPresetHint));
         ImGui::PopFont();
     }
 
@@ -385,7 +452,8 @@ void renderSidebar(AppRuntime &runtime) {
     //
     // ===== USB TOPOLOGY (which camera is on which controller) =====
     //
-    ImGui::TextColored(kSectionHeaderCol, "USB TOPOLOGY");
+    ImGui::TextColored(kSectionHeaderCol, "%s", i18n::L(i18n::S::SectionUsbTopology));
+    tooltipOnHover(i18n::L(i18n::S::TipUsbTopology));
     ImGui::PushFont(fontS);
     for(const auto &controllerId : usbTopology.controllers) {
         const auto nameIt = usbTopology.controllerNames.find(controllerId);
@@ -401,7 +469,7 @@ void renderSidebar(AppRuntime &runtime) {
             ImGui::TextColored(ctrlColor, "%s", ln.c_str());
         }
         if(empty) {
-            ImGui::TextDisabled("  (Empty)");
+            ImGui::TextDisabled("%s", i18n::L(i18n::S::UsbEmpty));
         } else {
             for(const auto &sess : runtime.sessions) {
                 if(!sess || sess->serialNumber.empty()) continue;
@@ -412,7 +480,7 @@ void renderSidebar(AppRuntime &runtime) {
             }
         }
         if(shared) {
-            for(const auto &ln : wrapText("shared by multiple cameras", 22)) {
+            for(const auto &ln : wrapText(i18n::L(i18n::S::UsbShared), 22)) {
                 ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", ln.c_str());
             }
         }
@@ -425,7 +493,8 @@ void renderSidebar(AppRuntime &runtime) {
     //
     // ===== GPU (OpenGL vendor/renderer/version) =====
     //
-    ImGui::TextColored(kSectionHeaderCol, "GPU");
+    ImGui::TextColored(kSectionHeaderCol, "%s", i18n::L(i18n::S::SectionGpu));
+    tooltipOnHover(i18n::L(i18n::S::TipGpu));
     {
         const auto clip = [](const std::string &s, size_t mx) -> std::string {
             return s.size() > mx ? s.substr(0, mx - 2) + ".." : s;
@@ -449,28 +518,30 @@ void renderSidebar(AppRuntime &runtime) {
 
         const bool busy = isUsbResetBusy();
 
-        ImGui::TextColored(ImVec4(0.95f, 0.60f, 0.30f, 1.0f), "RECOVERY");
+        ImGui::TextColored(ImVec4(0.95f, 0.60f, 0.30f, 1.0f), "%s", i18n::L(i18n::S::SectionRecovery));
         ImGui::Spacing();
 
         if(busy) ImGui::BeginDisabled();
-        if(ImGui::Button(busy ? "処理中..." : "USBをリセット", ImVec2(-1, 38))) {
+        if(ImGui::Button(busy ? i18n::L(i18n::S::RecoveryUsbResetBusy) : i18n::L(i18n::S::RecoveryUsbResetBtn), ImVec2(-1, 38))) {
             requestAllUsbHostReset();
         }
+        tooltipOnHover(i18n::L(i18n::S::TipUsbReset));
         if(busy) ImGui::EndDisabled();
         ImGui::PushFont(fontS);
-        ImGui::TextDisabled("カメラが認識されない時に");
+        ImGui::TextDisabled("%s", i18n::L(i18n::S::RecoveryUsbResetHint));
         ImGui::PopFont();
 
         ImGui::Spacing();
 
         ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.35f, 0.20f, 0.10f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.50f, 0.30f, 0.15f, 1.0f));
-        if(ImGui::Button("アプリを再起動", ImVec2(-1, 38))) {
+        if(ImGui::Button(i18n::L(i18n::S::RecoveryRestartBtn), ImVec2(-1, 38))) {
             restartApplication();
         }
         ImGui::PopStyleColor(2);
+        tooltipOnHover(i18n::L(i18n::S::TipRestart));
         ImGui::PushFont(fontS);
-        ImGui::TextDisabled("USBリセット後はこれを押す");
+        ImGui::TextDisabled("%s", i18n::L(i18n::S::RecoveryRestartHint));
         ImGui::PopFont();
     }
 

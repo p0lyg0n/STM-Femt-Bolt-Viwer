@@ -4,6 +4,7 @@
 #include "gl_utils.h"
 #include "render.h"
 #include "input.h"
+#include "i18n.h"
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -90,6 +91,8 @@ int runCpuFallbackMode(const std::shared_ptr<ob::Pipeline> &pipeline, const std:
 int main() try {
     std::cout << "STM Femto Bolt Viewer unified GLFW window (no OpenCV UI)" << std::endl;
 
+    i18n::loadPreferenceFromExeDir();
+
     ob::Context context;
     auto deviceList = context.queryDeviceList();
     if(!deviceList || getDeviceListCount(deviceList) == 0) {
@@ -167,9 +170,11 @@ int main() try {
         ImGuiIO &io = ImGui::GetIO();
         io.IniFilename = nullptr;
 
-        // Build glyph ranges: Japanese + extra symbols the UI uses (●, ■, •, ⚠, →)
-        static ImVector<ImWchar> glyphRanges;
-        if(glyphRanges.empty()) {
+        // Japanese glyphs (Meiryo covers Latin + Japanese) + extra symbols (●, ■, •, ⚠, →, °).
+        // Korean glyphs are loaded from Malgun Gothic via ImGui's font merge mode below
+        // because Meiryo does not contain Hangul.
+        static ImVector<ImWchar> jpGlyphRanges;
+        if(jpGlyphRanges.empty()) {
             ImFontGlyphRangesBuilder builder;
             builder.AddRanges(io.Fonts->GetGlyphRangesJapanese());
             builder.AddChar(0x25CF); // ●
@@ -178,20 +183,41 @@ int main() try {
             builder.AddChar(0x26A0); // ⚠
             builder.AddChar(0x2192); // →
             builder.AddChar(0x00B0); // °
-            builder.BuildRanges(&glyphRanges);
+            builder.BuildRanges(&jpGlyphRanges);
+        }
+        static ImVector<ImWchar> krGlyphRanges;
+        if(krGlyphRanges.empty()) {
+            ImFontGlyphRangesBuilder builder;
+            builder.AddRanges(io.Fonts->GetGlyphRangesKorean());
+            builder.BuildRanges(&krGlyphRanges);
         }
 
         const char *jpFontPath = "C:\\Windows\\Fonts\\meiryo.ttc";
+        const char *krFontPath = "C:\\Windows\\Fonts\\malgun.ttf";
         const char *latinFontPath = "C:\\Windows\\Fonts\\segoeui.ttf";
-        if(std::ifstream(jpFontPath).good()) {
-            runtime.fontSmall  = io.Fonts->AddFontFromFileTTF(jpFontPath, 20.0f, nullptr, glyphRanges.Data);
-            runtime.fontNormal = io.Fonts->AddFontFromFileTTF(jpFontPath, 23.0f, nullptr, glyphRanges.Data);
-            runtime.fontLarge  = io.Fonts->AddFontFromFileTTF(jpFontPath, 30.0f, nullptr, glyphRanges.Data);
-        } else if(std::ifstream(latinFontPath).good()) {
-            runtime.fontSmall  = io.Fonts->AddFontFromFileTTF(latinFontPath, 20.0f);
-            runtime.fontNormal = io.Fonts->AddFontFromFileTTF(latinFontPath, 23.0f);
-            runtime.fontLarge  = io.Fonts->AddFontFromFileTTF(latinFontPath, 30.0f);
-        }
+        const bool hasJp = std::ifstream(jpFontPath).good();
+        const bool hasKr = std::ifstream(krFontPath).good();
+        const bool hasLatin = std::ifstream(latinFontPath).good();
+
+        auto loadFontWithMerge = [&](float size) -> ImFont * {
+            ImFont *f = nullptr;
+            if(hasJp) {
+                f = io.Fonts->AddFontFromFileTTF(jpFontPath, size, nullptr, jpGlyphRanges.Data);
+            } else if(hasLatin) {
+                f = io.Fonts->AddFontFromFileTTF(latinFontPath, size);
+            }
+            if(f && hasKr) {
+                ImFontConfig cfg;
+                cfg.MergeMode = true;
+                cfg.PixelSnapH = true;
+                io.Fonts->AddFontFromFileTTF(krFontPath, size, &cfg, krGlyphRanges.Data);
+            }
+            return f;
+        };
+
+        runtime.fontSmall  = loadFontWithMerge(20.0f);
+        runtime.fontNormal = loadFontWithMerge(23.0f);
+        runtime.fontLarge  = loadFontWithMerge(30.0f);
     }
     ImGui_ImplGlfw_InitForOpenGL(window, false);
     ImGui_ImplOpenGL2_Init();
@@ -293,6 +319,8 @@ int main() try {
             }
         }
     }
+
+    i18n::savePreferenceToExeDir();
 
     ImGui_ImplOpenGL2_Shutdown();
     ImGui_ImplGlfw_Shutdown();
