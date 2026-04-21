@@ -446,19 +446,6 @@ void renderSidebar(AppRuntime &runtime) {
 
         StreamSettings &s = runtime.streamSettings;
 
-        char depthLabel[96];
-        std::snprintf(depthLabel, sizeof(depthLabel), "%s%d x %d",
-                      i18n::L(i18n::S::StreamDepthPrefix), s.depthW, s.depthH);
-        if(ImGui::Button(depthLabel, ImVec2(-1, 36))) {
-            size_t idx = nextIndex(kDepthPresets, 4, s.depthW, s.depthH);
-            s.depthW = kDepthPresets[idx].first;
-            s.depthH = kDepthPresets[idx].second;
-            applyStreamSettingsToAllSessions(runtime);
-        }
-        tooltipOnHover(i18n::L(i18n::S::TipStreamDepth));
-
-        ImGui::Spacing();
-
         char colorLabel[96];
         std::snprintf(colorLabel, sizeof(colorLabel), "%s%d x %d",
                       i18n::L(i18n::S::StreamColorPrefix), s.colorW, s.colorH);
@@ -469,6 +456,19 @@ void renderSidebar(AppRuntime &runtime) {
             applyStreamSettingsToAllSessions(runtime);
         }
         tooltipOnHover(i18n::L(i18n::S::TipStreamColor));
+
+        ImGui::Spacing();
+
+        char depthLabel[96];
+        std::snprintf(depthLabel, sizeof(depthLabel), "%s%d x %d",
+                      i18n::L(i18n::S::StreamDepthPrefix), s.depthW, s.depthH);
+        if(ImGui::Button(depthLabel, ImVec2(-1, 36))) {
+            size_t idx = nextIndex(kDepthPresets, 4, s.depthW, s.depthH);
+            s.depthW = kDepthPresets[idx].first;
+            s.depthH = kDepthPresets[idx].second;
+            applyStreamSettingsToAllSessions(runtime);
+        }
+        tooltipOnHover(i18n::L(i18n::S::TipStreamDepth));
 
         ImGui::Spacing();
 
