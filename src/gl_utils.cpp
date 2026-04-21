@@ -430,9 +430,9 @@ bool isCursorInsideSessionPointPane(const AppRuntime &runtime, size_t sessionInd
     int cellX = 0, cellY = 0, cellW = 0, cellH = 0;
     sessionCellBounds(runtime, sessionIndex, cellX, cellY, cellW, cellH);
     const double yGl = static_cast<double>(runtime.framebufferH) - cursorY;
-    constexpr int kRowPad = 12;
-    constexpr int kRowHeaderH = 175;
-    constexpr int kPaneGap = 10;
+    constexpr int kRowPad = kSessionRowPad;
+    constexpr int kRowHeaderH = kSessionRowHeaderH;
+    constexpr int kPaneGap = kSessionPaneGap;
     const int paneW0 = std::max(1, (cellW - (kPaneGap * 2)) / 3);
     const int paneW1 = paneW0;
     const int paneW2 = std::max(1, cellW - paneW0 - paneW1 - (kPaneGap * 2));

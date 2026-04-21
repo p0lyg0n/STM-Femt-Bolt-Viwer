@@ -48,9 +48,9 @@ void renderSessionSlot(
     auto &state = session->viewState;
     state.framebufferW = runtime.framebufferW;
 
-    constexpr int kRowHeaderH = 175;
-    constexpr int kRowPad = 12;
-    constexpr int kPaneGap = 10;
+    constexpr int kRowHeaderH = kSessionRowHeaderH;
+    constexpr int kRowPad = kSessionRowPad;
+    constexpr int kPaneGap = kSessionPaneGap;
 
     int slotX = 0, slotY = 0, slotW = 0, slotH = 0;
     sessionCellBounds(runtime, sessionIndex, slotX, slotY, slotW, slotH);
@@ -189,13 +189,8 @@ void renderSessionSlot(
         }
         hy += lhS;
 
-        // Row 3: FPS (left) | TEMP (right)
+        // Row 3: TEMP (FPS / RES / PTS moved into pane labels to avoid duplicating info)
         {
-            std::ostringstream fpsSS;
-            fpsSS << "FPS  Color:" << std::fixed << std::setprecision(1) << session->fpsColor.fps
-                  << "  Depth:" << session->fpsDepth.fps;
-            addTextTip(fontS, 20.0f, {hx, hy}, IM_COL32(90, 255, 115, 255), fpsSS.str().c_str(), i18n::L(i18n::S::TipDevFps));
-
             float cpuT, irT, ldmT; bool tempOk;
             { std::lock_guard<std::mutex> g(session->tempMutex); cpuT = session->cpuTemp; irT = session->irTemp; ldmT = session->ldmTemp; tempOk = session->tempReady; }
             std::string tempStr;
@@ -207,38 +202,29 @@ void renderSessionSlot(
             } else {
                 tempStr = i18n::L(i18n::S::DevTempNoData);
             }
-            addTextTip(fontS, 20.0f, {col2x, hy}, IM_COL32(170, 170, 180, 255), tempStr.c_str(), i18n::L(i18n::S::TipDevTemp));
-        }
-        hy += lhS;
-
-        // Row 4: RES (show SENSOR resolutions — depth before align-to-color)
-        {
-            std::ostringstream resSS;
-            if(isDisconnected) {
-                resSS << "RES  --x--  Depth: --x--";
-            } else {
-                resSS << "RES  " << state.colorW << "x" << state.colorH
-                      << "  Depth: " << session->streamSettings.depthW << "x" << session->streamSettings.depthH;
-            }
-            addTextTip(fontS, 20.0f, {hx, hy}, IM_COL32(90, 255, 115, 255), resSS.str().c_str(), i18n::L(i18n::S::TipDevRes));
-        }
-        hy += lhS;
-
-        // Row 5: PTS
-        {
-            std::ostringstream ptsSS;
-            ptsSS << "PTS  " << session->latestPoints << " pts   "
-                  << std::fixed << std::setprecision(1) << session->fpsPoint.fps << " fps";
-            addTextTip(fontS, 20.0f, {hx, hy}, IM_COL32(90, 255, 115, 255), ptsSS.str().c_str(), i18n::L(i18n::S::TipDevPts));
+            addTextTip(fontS, 20.0f, {hx, hy}, IM_COL32(170, 170, 180, 255), tempStr.c_str(), i18n::L(i18n::S::TipDevTemp));
         }
 
         // ---- Pane labels (top-left of each pane) ----
-        // Hover detection covers the whole pane viewport so users can hover anywhere on
-        // the image to see what it represents.
+        // A semi-transparent dark pill is drawn behind the text so that labels stay
+        // readable regardless of what the camera is showing (bright window, white
+        // walls, etc.). Hover detection covers the whole pane viewport.
+        constexpr float kLabelFontSize = 22.0f;
+        constexpr float kLabelPadX = 7.0f;
+        constexpr float kLabelPadY = 3.0f;
+        constexpr float kLabelRound = 4.0f;
+        const ImU32 kLabelBg = IM_COL32(0, 0, 0, 170);
+        const auto drawLabelPill = [&](float px, float py, const char *text, ImU32 textCol) {
+            const ImVec2 ts = fontS->CalcTextSizeA(kLabelFontSize, FLT_MAX, 0.0f, text);
+            const ImVec2 tl{px - kLabelPadX, py - kLabelPadY};
+            const ImVec2 br{px + ts.x + kLabelPadX, py + ts.y + kLabelPadY};
+            dl->AddRectFilled(tl, br, kLabelBg, kLabelRound);
+            dl->AddText(fontS, kLabelFontSize, {px, py}, textCol, text);
+        };
         const auto paneLabel = [&](const Viewport &vp, const std::string &txt, ImU32 col, const char *tip) {
-            const float px = (float)vp.x + 5.0f;
-            const float py = (float)(runtime.framebufferH - vp.y - vp.h) + 5.0f;
-            dl->AddText(fontS, 20.0f, {px, py}, col, txt.c_str());
+            const float px = (float)vp.x + 10.0f;
+            const float py = (float)(runtime.framebufferH - vp.y - vp.h) + 8.0f;
+            drawLabelPill(px, py, txt.c_str(), col);
             const float paneTop    = (float)(runtime.framebufferH - vp.y - vp.h);
             const float paneBottom = (float)(runtime.framebufferH - vp.y);
             hoverTip({(float)vp.x, paneTop}, {(float)(vp.x + vp.w), paneBottom}, tip);
@@ -249,7 +235,7 @@ void renderSessionSlot(
         if(isDisconnected) { label1 << "--x-- --"; }
         else { label1 << state.colorW << "x" << state.colorH << " " << state.colorFmt; }
         label1 << "  FPS " << std::fixed << std::setprecision(1) << session->fpsColor.fps;
-        paneLabel(vpRgb, label1.str(), IM_COL32(255, 255, 255, 210), i18n::L(i18n::S::TipPaneRgb));
+        paneLabel(vpRgb, label1.str(), IM_COL32(255, 255, 255, 255), i18n::L(i18n::S::TipPaneRgb));
 
         std::ostringstream label2;
         const bool middleIsIr = runtime.showIr;
@@ -262,7 +248,7 @@ void renderSessionSlot(
         }
         label2 << "  FPS " << std::fixed << std::setprecision(1)
                << (middleIsIr ? session->fpsIr.fps : session->fpsDepth.fps);
-        paneLabel(vpDepth, label2.str(), IM_COL32(255, 255, 255, 210),
+        paneLabel(vpDepth, label2.str(), IM_COL32(255, 255, 255, 255),
                   i18n::L(middleIsIr ? i18n::S::TipPaneIr : i18n::S::TipPaneDepth));
 
         // Click anywhere on the middle pane to toggle Depth ⇄ IR.
@@ -281,14 +267,14 @@ void renderSessionSlot(
         else if(state.pointMode == PointRenderMode::GpuMesh)       { label3 << "MESH [XYZRGB]"; }
         else if(state.pointMode == PointRenderMode::GpuPoint)      { label3 << "POINT [XYZRGB]"; }
         else                                                        { label3 << "CPU POINT [XYZRGB]"; }
-        paneLabel(vpPoint, label3.str(), IM_COL32(255, 255, 255, 210), i18n::L(i18n::S::TipPanePoint));
+        paneLabel(vpPoint, label3.str(), IM_COL32(255, 255, 255, 255), i18n::L(i18n::S::TipPanePoint));
 
         std::ostringstream ptStat;
         ptStat << "pts " << session->latestPoints << "  FPS " << std::fixed << std::setprecision(1) << session->fpsPoint.fps;
         {
-            const float px = (float)vpPoint.x + 6.0f;
-            const float py = (float)(runtime.framebufferH - vpPoint.y - vpPoint.h) + 30.0f;
-            dl->AddText(fontS, 20.0f, {px, py}, IM_COL32(190, 190, 210, 210), ptStat.str().c_str());
+            const float px = (float)vpPoint.x + 10.0f;
+            const float py = (float)(runtime.framebufferH - vpPoint.y - vpPoint.h) + 8.0f + kLabelFontSize + (kLabelPadY * 2) + 4.0f;
+            drawLabelPill(px, py, ptStat.str().c_str(), IM_COL32(230, 230, 255, 255));
         }
 
         // ---- Disconnection overlay messages ----
