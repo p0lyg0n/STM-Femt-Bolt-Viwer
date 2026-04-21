@@ -16,7 +16,7 @@ void renderSidebar(AppRuntime &runtime);
 
 void renderSessionSlot(
     const std::shared_ptr<CameraSession> &session,
-    const AppRuntime &runtime,
+    AppRuntime &runtime,
     size_t sessionIndex,
     const SystemUsbTopology &usbTopology,
     const std::unordered_map<std::string, int> &controllerUsage);

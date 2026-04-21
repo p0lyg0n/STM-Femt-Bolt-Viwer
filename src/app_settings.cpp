@@ -92,6 +92,8 @@ AppSettings load() {
             out.stream.colorH = parseInt(val, out.stream.colorH);
         } else if(key == "fps") {
             out.stream.fps = parseInt(val, out.stream.fps);
+        } else if(key == "show_ir") {
+            out.showIr = (val == "1" || val == "true" || val == "yes");
         }
     }
     return out;
@@ -107,6 +109,7 @@ void save(const AppSettings &s) {
     f << "color_w="     << s.stream.colorW               << "\n";
     f << "color_h="     << s.stream.colorH               << "\n";
     f << "fps="         << s.stream.fps                  << "\n";
+    f << "show_ir="     << (s.showIr ? "1" : "0")        << "\n";
 }
 
 } // namespace app_settings

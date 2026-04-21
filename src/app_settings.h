@@ -12,6 +12,7 @@ struct AppSettings {
     i18n::Lang       lang      = i18n::Lang::Japanese;
     PointRenderMode  pointMode = PointRenderMode::GpuMesh;
     StreamSettings   stream;
+    bool             showIr    = false;
 };
 
 // Reads settings.ini next to the exe. Missing file / keys fall back to defaults.

@@ -164,6 +164,11 @@ std::shared_ptr<ob::Config> createStreamConfig(const StreamSettings &settings) {
     auto config = std::make_shared<ob::Config>();
     config->enableVideoStream(OB_STREAM_DEPTH, settings.depthW, settings.depthH, settings.fps, OB_FORMAT_Y16);
     config->enableVideoStream(OB_STREAM_COLOR, settings.colorW, settings.colorH, settings.fps, OB_FORMAT_RGB);
+    // IR shares the same CMOS and resolution as Depth on Femto Bolt, so enable
+    // it alongside with matching parameters. The UI shows it on demand (click
+    // the middle pane to toggle between Depth and IR). Kept always-on to keep
+    // the toggle instant instead of requiring a pipeline restart.
+    config->enableVideoStream(OB_STREAM_IR, settings.depthW, settings.depthH, settings.fps, OB_FORMAT_Y16);
     config->setFrameAggregateOutputMode(OB_FRAME_AGGREGATE_OUTPUT_FULL_FRAME_REQUIRE);
     return config;
 }
@@ -469,6 +474,10 @@ void updateSessionFromFrames(const std::shared_ptr<CameraSession> &session) {
 
     auto colorFrame = alignedFrameset->colorFrame();
     auto depthFrame = alignedFrameset->depthFrame();
+    // IR frame lives on the raw frameset because Align(OB_STREAM_COLOR) does not
+    // touch IR. Grabbing it from the raw pre-align frameset keeps the native
+    // Depth-sensor resolution (matching Depth size).
+    auto irFrame = frameSet->irFrame();
 
     tryFetchCameraParam(session->pipeline, session->cameraParamReady, session->cameraParam);
 
@@ -482,6 +491,12 @@ void updateSessionFromFrames(const std::shared_ptr<CameraSession> &session) {
         uploadRgbTexture(session->texDepth, session->depthPseudo, session->viewState.depthW, session->viewState.depthH);
         session->fpsDepth.tick();
         session->viewState.depthFmt = toFormatText(depthFrame->format());
+    }
+
+    if(irFrame && convertIrFrameToGrayscaleRgb(irFrame, session->irImage, session->viewState.irW, session->viewState.irH)) {
+        uploadRgbTexture(session->texIr, session->irImage, session->viewState.irW, session->viewState.irH);
+        session->fpsIr.tick();
+        session->viewState.irFmt = toFormatText(irFrame->format());
     }
 
     if(colorFrame && depthFrame && session->cameraParamReady && !session->rgb.empty()) {

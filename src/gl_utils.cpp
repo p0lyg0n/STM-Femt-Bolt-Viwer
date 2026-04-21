@@ -448,6 +448,7 @@ void initCameraSessionTextures(const std::shared_ptr<CameraSession> &session) {
     if(!session) return;
     if(session->texRgb == 0) session->texRgb = createRgbGlTexture();
     if(session->texDepth == 0) session->texDepth = createRgbGlTexture();
+    if(session->texIr == 0) session->texIr = createRgbGlTexture();
     if(session->texPointCpu == 0) session->texPointCpu = createRgbGlTexture();
 }
 

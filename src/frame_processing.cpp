@@ -65,6 +65,46 @@ bool convertDepthFrameToPseudoRgb(const std::shared_ptr<ob::DepthFrame> &frame, 
     return true;
 }
 
+bool convertIrFrameToGrayscaleRgb(const std::shared_ptr<ob::VideoFrame> &frame, std::vector<uint8_t> &out, int &w, int &h) {
+    if(!frame) return false;
+    w = frame->width();
+    h = frame->height();
+    if(w <= 0 || h <= 0) return false;
+
+    // Femto Bolt IR is Y16 (16-bit grayscale). Map 0..4095 -> 0..255 with saturation;
+    // typical reflected-IR signal at 0.5–3 m falls well inside that range and looks
+    // close to a black-and-white IR photo. A fixed scale is preferred over auto-gain
+    // to avoid frame-to-frame flicker.
+    if(frame->format() == OB_FORMAT_Y16) {
+        const uint16_t *src = reinterpret_cast<const uint16_t *>(frame->data());
+        if(!src) return false;
+        out.resize(static_cast<size_t>(w) * static_cast<size_t>(h) * 3u);
+        const size_t n = static_cast<size_t>(w) * static_cast<size_t>(h);
+        for(size_t i = 0; i < n; ++i) {
+            const uint32_t v = src[i] >> 4;
+            const uint8_t g = static_cast<uint8_t>(v > 255 ? 255 : v);
+            out[i * 3u + 0] = g;
+            out[i * 3u + 1] = g;
+            out[i * 3u + 2] = g;
+        }
+        return true;
+    }
+    if(frame->format() == OB_FORMAT_Y8) {
+        const uint8_t *src = reinterpret_cast<const uint8_t *>(frame->data());
+        if(!src) return false;
+        out.resize(static_cast<size_t>(w) * static_cast<size_t>(h) * 3u);
+        const size_t n = static_cast<size_t>(w) * static_cast<size_t>(h);
+        for(size_t i = 0; i < n; ++i) {
+            const uint8_t g = src[i];
+            out[i * 3u + 0] = g;
+            out[i * 3u + 1] = g;
+            out[i * 3u + 2] = g;
+        }
+        return true;
+    }
+    return false;
+}
+
 bool rebuildMeshFromAlignedDepthColor(
     const std::shared_ptr<ob::DepthFrame> &depthFrame,
     const std::vector<uint8_t> &rgb,

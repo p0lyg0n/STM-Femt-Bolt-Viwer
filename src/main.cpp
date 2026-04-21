@@ -153,6 +153,7 @@ int main() try {
 
     AppRuntime runtime;
     runtime.streamSettings = loadedSettings.stream;
+    runtime.showIr         = loadedSettings.showIr;
     {
         const char *v   = reinterpret_cast<const char *>(glGetString(GL_VENDOR));
         const char *r   = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
@@ -338,6 +339,7 @@ int main() try {
         saved.stream    = runtime.streamSettings;
         saved.pointMode = sessions.empty() ? loadedSettings.pointMode
                                            : sessions.front()->viewState.pointMode;
+        saved.showIr    = runtime.showIr;
         app_settings::save(saved);
     }
 
@@ -349,6 +351,7 @@ int main() try {
     for(const auto &session : sessions) {
         glDeleteTextures(1, &session->texRgb);
         glDeleteTextures(1, &session->texDepth);
+        glDeleteTextures(1, &session->texIr);
         glDeleteTextures(1, &session->texPointCpu);
     }
     glfwDestroyWindow(window);

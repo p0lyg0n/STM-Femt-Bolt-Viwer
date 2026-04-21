@@ -40,7 +40,7 @@ bool langPillButton(const char *label, bool active, const ImVec2 &size) {
 
 void renderSessionSlot(
     const std::shared_ptr<CameraSession> &session,
-    const AppRuntime &runtime,
+    AppRuntime &runtime,
     size_t sessionIndex,
     const SystemUsbTopology &usbTopology,
     const std::unordered_map<std::string, int> &controllerUsage) {
@@ -78,7 +78,9 @@ void renderSessionSlot(
 
     if(!isDisconnected) {
         vpRgb = drawTexturePane(session->texRgb, contentX, contentY, paneW0, contentH, kPanelAspectRatio);
-        vpDepth = drawTexturePane(session->texDepth, contentX + paneW0 + kPaneGap, contentY, paneW1, contentH, kPanelAspectRatio);
+        // Middle pane: Depth by default, IR when runtime.showIr is toggled on by clicking it.
+        const GLuint middleTex = runtime.showIr ? session->texIr : session->texDepth;
+        vpDepth = drawTexturePane(middleTex, contentX + paneW0 + kPaneGap, contentY, paneW1, contentH, kPanelAspectRatio);
 
         if(state.pointMode == PointRenderMode::CpuPoint) {
             if(renderCpuPointPanelImage(state, kCpuPreviewW, kCpuPreviewH, session->cpuPointPreview)) {
@@ -250,11 +252,29 @@ void renderSessionSlot(
         paneLabel(vpRgb, label1.str(), IM_COL32(255, 255, 255, 210), i18n::L(i18n::S::TipPaneRgb));
 
         std::ostringstream label2;
-        label2 << "DEPTH ";
+        const bool middleIsIr = runtime.showIr;
+        label2 << (middleIsIr ? "IR " : "DEPTH ");
         if(isDisconnected) { label2 << "--x-- --"; }
-        else { label2 << session->streamSettings.depthW << "x" << session->streamSettings.depthH << " " << state.depthFmt; }
-        label2 << "  FPS " << std::fixed << std::setprecision(1) << session->fpsDepth.fps;
-        paneLabel(vpDepth, label2.str(), IM_COL32(255, 255, 255, 210), i18n::L(i18n::S::TipPaneDepth));
+        else if(middleIsIr) {
+            label2 << session->streamSettings.depthW << "x" << session->streamSettings.depthH << " " << state.irFmt;
+        } else {
+            label2 << session->streamSettings.depthW << "x" << session->streamSettings.depthH << " " << state.depthFmt;
+        }
+        label2 << "  FPS " << std::fixed << std::setprecision(1)
+               << (middleIsIr ? session->fpsIr.fps : session->fpsDepth.fps);
+        paneLabel(vpDepth, label2.str(), IM_COL32(255, 255, 255, 210),
+                  i18n::L(middleIsIr ? i18n::S::TipPaneIr : i18n::S::TipPaneDepth));
+
+        // Click anywhere on the middle pane to toggle Depth ⇄ IR.
+        {
+            const float paneTop    = (float)(runtime.framebufferH - vpDepth.y - vpDepth.h);
+            const float paneBottom = (float)(runtime.framebufferH - vpDepth.y);
+            const ImVec2 tl{(float)vpDepth.x, paneTop};
+            const ImVec2 br{(float)(vpDepth.x + vpDepth.w), paneBottom};
+            if(ImGui::IsMouseHoveringRect(tl, br, false) && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                runtime.showIr = !runtime.showIr;
+            }
+        }
 
         std::ostringstream label3;
         if(isDisconnected)                                          { label3 << "POINT [XYZRGB]"; }

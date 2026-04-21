@@ -76,6 +76,7 @@ enum class S {
     TipDevPts,
     TipPaneRgb,
     TipPaneDepth,
+    TipPaneIr,
     TipPanePoint,
 
     // Device panel disconnection overlay

@@ -145,8 +145,11 @@ struct CameraViewState {
     int colorH = 0;
     int depthW = 0;
     int depthH = 0;
+    int irW = 0;
+    int irH = 0;
     std::string colorFmt = "-";
     std::string depthFmt = "-";
+    std::string irFmt = "-";
 };
 
 struct CameraSession {
@@ -171,15 +174,18 @@ struct CameraSession {
 
     GLuint texRgb = 0;
     GLuint texDepth = 0;
+    GLuint texIr = 0;
     GLuint texPointCpu = 0;
     std::vector<uint8_t> rgb;
     std::vector<uint8_t> depthPseudo;
+    std::vector<uint8_t> irImage;
     std::vector<uint8_t> cpuPointPreview;
     OBCameraParam cameraParam = {};
     bool cameraParamReady = false;
 
     FpsMeter fpsColor;
     FpsMeter fpsDepth;
+    FpsMeter fpsIr;
     FpsMeter fpsPoint;
     FpsMeter fpsLog;
     int latestPoints = 0;
@@ -229,6 +235,9 @@ struct AppRuntime {
     ImFont* fontNormal = nullptr;
     ImFont* fontLarge  = nullptr;
     StreamSettings streamSettings;
+    // When true, the middle pane shows the IR (grayscale) image instead of Depth.
+    // Toggled by clicking the middle pane.
+    bool showIr = false;
 };
 
 struct Viewport {
