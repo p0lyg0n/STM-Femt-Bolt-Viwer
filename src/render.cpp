@@ -135,7 +135,11 @@ void renderSessionSlot(
         float hy = hTL.y + 10.0f;
         const float lhL = 38.0f;
         const float lhS = 28.0f;
-        const float col2x = hTL.x + (float)slotW * 0.50f;
+        // Three columns for the second row (USB | IMU | TEMP). IMU at 36% and
+        // TEMP at 66% keep the device name row readable and give each column
+        // enough room at typical widths.
+        const float col2x = hTL.x + (float)slotW * 0.36f;
+        const float col3x = hTL.x + (float)slotW * 0.66f;
 
         // Row 1: Device N  SN: xxx  [● LIVE / ● DISC]
         {
@@ -161,7 +165,7 @@ void renderSessionSlot(
         }
         hy += lhL;
 
-        // Row 2: USB (left) | IMU (right)
+        // Row 2: USB | IMU | TEMP on a single line (3 columns).
         {
             std::string usbStr;
             if(usbInfo) {
@@ -180,29 +184,25 @@ void renderSessionSlot(
             if(imuOk) {
                 std::ostringstream imuSS;
                 imuSS << "IMU X:" << std::fixed << std::setprecision(2) << accel.x
-                      << " Y:" << accel.y << " Z:" << accel.z << " m/s2";
+                      << " Y:" << accel.y << " Z:" << accel.z;
                 imuStr = imuSS.str();
             } else {
                 imuStr = i18n::L(i18n::S::DevImuWaiting);
             }
             addTextTip(fontS, 20.0f, {col2x, hy}, IM_COL32(170, 170, 180, 255), imuStr.c_str(), i18n::L(i18n::S::TipDevImu));
-        }
-        hy += lhS;
 
-        // Row 3: TEMP (FPS / RES / PTS moved into pane labels to avoid duplicating info)
-        {
             float cpuT, irT, ldmT; bool tempOk;
             { std::lock_guard<std::mutex> g(session->tempMutex); cpuT = session->cpuTemp; irT = session->irTemp; ldmT = session->ldmTemp; tempOk = session->tempReady; }
             std::string tempStr;
             if(tempOk) {
                 std::ostringstream tempSS;
-                tempSS << "TEMP  CPU:" << std::fixed << std::setprecision(1) << cpuT
-                       << "C  IR:" << irT << "C  LDM:" << ldmT << "C";
+                tempSS << "TEMP CPU:" << std::fixed << std::setprecision(1) << cpuT
+                       << " IR:" << irT << " LDM:" << ldmT;
                 tempStr = tempSS.str();
             } else {
                 tempStr = i18n::L(i18n::S::DevTempNoData);
             }
-            addTextTip(fontS, 20.0f, {hx, hy}, IM_COL32(170, 170, 180, 255), tempStr.c_str(), i18n::L(i18n::S::TipDevTemp));
+            addTextTip(fontS, 20.0f, {col3x, hy}, IM_COL32(170, 170, 180, 255), tempStr.c_str(), i18n::L(i18n::S::TipDevTemp));
         }
 
         // ---- Pane labels (top-left of each pane) ----

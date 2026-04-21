@@ -72,9 +72,9 @@ constexpr int kSidebarPad = 12;
 constexpr int kSidebarSectionGap = 10;
 constexpr int kSidebarHeaderH = 42;
 // Per-device header height above each session's image panes. Contains the
-// device name, USB / IMU, and temperature rows. Reduced from 175 after the
-// FPS/RES/PTS rows were moved into the pane labels (no longer duplicated).
-constexpr int kSessionRowHeaderH = 110;
+// device name row and a second row with USB / IMU / TEMP in three columns.
+// Compact enough that 4 cameras fit as 1x4 vertical in a typical 1280x960 window.
+constexpr int kSessionRowHeaderH = 82;
 constexpr int kSessionRowPad = 12;
 constexpr int kSessionPaneGap = 10;
 

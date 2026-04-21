@@ -420,7 +420,18 @@ void sessionCellBounds(const AppRuntime &runtime, size_t sessionIndex, int &cell
 }
 
 bool useGridLayout(const AppRuntime &runtime) {
-    return runtime.sessions.size() > 2;
+    const int count = static_cast<int>(runtime.sessions.size());
+    if(count <= 2) return false;
+    // For 3-4 cameras the default layout is 1xN vertical (wider panes, fewer
+    // columns). Only fall back to a 2x2 grid when the window is too short to
+    // give each vertical cell a usable pane height.
+    constexpr int kVerticalGap = 12;
+    constexpr int kMinPaneHForVertical = 80;
+    const auto mainVp = mainContentViewport(runtime);
+    const int availH = std::max(1, mainVp.h - (count - 1) * kVerticalGap);
+    const int perCellH = availH / count;
+    const int contentH = perCellH - kSessionRowHeaderH - (kSessionRowPad * 2);
+    return contentH < kMinPaneHForVertical;
 }
 
 int sessionIndexFromCursorY(const AppRuntime &runtime, double cursorY) {
