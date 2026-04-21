@@ -9,3 +9,6 @@ _tmp_orbbec_sample_viewer/
 *.zip
 .vs/
 .vscode/
+
+# GLFW is built from source via add_subdirectory; its output lib lives here but must not be committed.
+third_party/glfw/lib/glfw3.lib
