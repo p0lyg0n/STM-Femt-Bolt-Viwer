@@ -16,7 +16,7 @@ if(!(Test-Path (Join-Path $orbbecSdkDir "include\\libobsensor\\ObSensor.hpp"))) 
   throw "Orbbec SDK headers not found. ORBBEC_SDK_DIR=$orbbecSdkDir"
 }
 
-$running = Get-Process -Name "stm_femto_bolt_viewer_ver1","tsm_femto_bolt_usb_viewer_ver1","femtobolt_rebuild_v2" -ErrorAction SilentlyContinue
+$running = Get-Process -Name "stm_femto_bolt_viewer" -ErrorAction SilentlyContinue
 if($running) {
   Write-Host "Stopping running viewer process before build..." -ForegroundColor Yellow
   $running | Stop-Process -Force
@@ -36,4 +36,4 @@ if($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "Build completed." -ForegroundColor Green
-Write-Host "Run: $buildDir\\stm_femto_bolt_viewer_ver1.exe"
+Write-Host "Run: $buildDir\\stm_femto_bolt_viewer.exe"

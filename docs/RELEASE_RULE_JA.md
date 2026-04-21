@@ -9,17 +9,29 @@
 ## 2. 配布物
 - 配布形式は ZIP のみ。
 - ファイル名は以下:
-  - `STM-Femto-Bolt-Viewer-ver1_v<VERSION>_<SUFFIX>_win64.zip`
+  - `STM-Femto-Bolt-Viewer_v<VERSION>_<SUFFIX>_win64.zip`
 
 ## 3. GitHub Actions による自動公開
 - `main` への push ごとに自動ビルドし、`Auto Build (main)` リリースへ更新公開する。
 - `v*` タグ push 時は、正式リリースとして同名タグで公開する。
 
 ## 4. 配布ZIPの中身
-- `stm_femto_bolt_viewer_ver1.exe`
+- `stm_femto_bolt_viewer.exe`
 - 実行に必要な Orbbec ランタイム DLL
 - `README.txt`
 
 ## 5. 例外
 - GitHub-hosted runner では Orbbec SDK を扱えない場合がある。
 - その場合は self-hosted Windows runner を使うこと。
+
+## 6. 表示安定ルール
+- このアプリでは表示の安定を最優先とする。
+- FPS低下やカクつきにつながる処理は、原則としてメイン描画ループから外す。
+- USB列挙、トポロジー確認、切断検知などの重い処理は、別スレッドまたは非同期処理に分離する。
+- UIが止まる可能性のある同期処理は避ける。
+- 実装判断で迷った場合は、機能追加よりも「止まらないこと」を優先する。
+
+## 7. UI言語ルール
+- UIは日本語を基準として作る。
+- 文言追加や整理のときは、日本語・韓国語・英語の3言語に対応できる前提で設計する。
+- 画面表示、ログ、ツールチップは、将来の3言語展開を前提に保守する。

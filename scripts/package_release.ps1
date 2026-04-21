@@ -21,7 +21,7 @@ if(!(Test-Path $buildPath)) {
   throw "Build directory not found: $BuildDir"
 }
 
-$exe = Join-Path $buildPath "stm_femto_bolt_viewer_ver1.exe"
+$exe = Join-Path $buildPath "stm_femto_bolt_viewer.exe"
 if(!(Test-Path $exe)) {
   throw "Executable not found: $exe"
 }
@@ -79,10 +79,10 @@ if(Test-Path $buildExtDir) {
 }
 
 $readmeTxt = @"
-STM Femto Bolt Viewer ver1
+STM Femto Bolt Viewer
 
 1) Femto Bolt を接続
-2) stm_femto_bolt_viewer_ver1.exe を実行
+2) stm_femto_bolt_viewer.exe を実行
 
 操作:
 - q / ESC: 終了
@@ -98,7 +98,7 @@ $suffixPart = ""
 if(-not [string]::IsNullOrWhiteSpace($Suffix)) {
   $suffixPart = "_$Suffix"
 }
-$zipName = "STM-Femto-Bolt-Viewer-ver1_v$Version${suffixPart}_win64.zip"
+$zipName = "STM-Femto-Bolt-Viewer_v$Version${suffixPart}_win64.zip"
 $zipPath = Join-Path $OutputDir $zipName
 if(Test-Path $zipPath) {
   Remove-Item -Force $zipPath

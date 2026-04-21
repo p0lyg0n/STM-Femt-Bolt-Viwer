@@ -38,7 +38,7 @@ jobs:
         run: |
           set SHA8=%GITHUB_SHA:~0,8%
           powershell -ExecutionPolicy Bypass -File .\scripts\package_release.ps1 -Version "${{ steps.ver.outputs.version }}" -BuildDir "build" -OutputDir "release" -Suffix "%SHA8%"
-          for /f %%F in ('dir /b /o-d "release\\STM-Femto-Bolt-Viewer-ver1_v${{ steps.ver.outputs.version }}_*_win64.zip"') do (
+          for /f %%F in ('dir /b /o-d "release\\STM-Femto-Bolt-Viewer_v${{ steps.ver.outputs.version }}_*_win64.zip"') do (
             echo package_path=release/%%F>>%GITHUB_OUTPUT%
             goto :done
           )

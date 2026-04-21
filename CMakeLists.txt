@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(STMFemtoBoltViewerVer1 LANGUAGES CXX)
+project(STMFemtoBoltViewer LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,6 +7,30 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(MSVC)
   add_compile_options(/utf-8)
 endif()
+
+include(FetchContent)
+set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/_imgui_cache" CACHE PATH "" FORCE)
+FetchContent_Declare(imgui
+  GIT_REPOSITORY https://github.com/ocornut/imgui.git
+  GIT_TAG        v1.91.6
+  GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(imgui)
+
+add_library(imgui_lib STATIC
+  ${imgui_SOURCE_DIR}/imgui.cpp
+  ${imgui_SOURCE_DIR}/imgui_draw.cpp
+  ${imgui_SOURCE_DIR}/imgui_tables.cpp
+  ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+  ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+  ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl2.cpp
+)
+target_include_directories(imgui_lib PUBLIC
+  ${imgui_SOURCE_DIR}
+  ${imgui_SOURCE_DIR}/backends
+  "${CMAKE_SOURCE_DIR}/third_party/glfw/include"
+)
+target_link_libraries(imgui_lib PUBLIC opengl32)
 
 set(ORBBEC_SDK_DIR "${CMAKE_SOURCE_DIR}/../legacy_20260420_pre_rebuild/_vendor/OrbbecSDK" CACHE PATH "Path to OrbbecSDK root")
 if(NOT EXISTS "${ORBBEC_SDK_DIR}/include/libobsensor/ObSensor.hpp")
@@ -57,18 +81,26 @@ foreach(CANDIDATE IN LISTS ORBBEC_RUNTIME_CANDIDATES)
   endif()
 endforeach()
 
-add_executable(stm_femto_bolt_viewer_ver1
+add_executable(stm_femto_bolt_viewer
   src/main.cpp
+  src/usb_topology.cpp
+  src/frame_processing.cpp
+  src/camera_session.cpp
+  src/gl_utils.cpp
+  src/render.cpp
+  src/input.cpp
 )
 
-target_include_directories(stm_femto_bolt_viewer_ver1 PRIVATE
+target_include_directories(stm_femto_bolt_viewer PRIVATE
   ${ORBBEC_SDK_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(stm_femto_bolt_viewer_ver1 PRIVATE
+target_link_libraries(stm_femto_bolt_viewer PRIVATE
   ${ORBBEC_LIB}
   ${GLFW_TARGET}
   opengl32
+  imgui_lib
 )
 
 set(ORBBEC_RUNTIME_DLLS "")
@@ -83,20 +115,20 @@ endif()
 
 foreach(DLL_PATH IN LISTS ORBBEC_RUNTIME_DLLS)
   if(EXISTS "${DLL_PATH}")
-    add_custom_command(TARGET stm_femto_bolt_viewer_ver1 POST_BUILD
+    add_custom_command(TARGET stm_femto_bolt_viewer POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
       "${DLL_PATH}"
-      "$<TARGET_FILE_DIR:stm_femto_bolt_viewer_ver1>"
+      "$<TARGET_FILE_DIR:stm_femto_bolt_viewer>"
     )
   endif()
 endforeach()
 
 if(NOT ORBBEC_RUNTIME_DIR STREQUAL "")
   if(EXISTS "${ORBBEC_RUNTIME_DIR}/extensions")
-    add_custom_command(TARGET stm_femto_bolt_viewer_ver1 POST_BUILD
+    add_custom_command(TARGET stm_femto_bolt_viewer POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_directory
       "${ORBBEC_RUNTIME_DIR}/extensions"
-      "$<TARGET_FILE_DIR:stm_femto_bolt_viewer_ver1>/extensions"
+      "$<TARGET_FILE_DIR:stm_femto_bolt_viewer>/extensions"
     )
   endif()
 endif()

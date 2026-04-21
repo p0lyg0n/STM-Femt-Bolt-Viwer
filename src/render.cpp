@@ -1,0 +1,480 @@
+#include "render.h"
+#include "input.h"
+#include "frame_processing.h"
+#include "camera_session.h"
+
+#include <algorithm>
+#include <iomanip>
+#include <mutex>
+#include <sstream>
+#include <string>
+
+void renderSessionSlot(
+    const std::shared_ptr<CameraSession> &session,
+    const AppRuntime &runtime,
+    size_t sessionIndex,
+    const SystemUsbTopology &usbTopology,
+    const std::unordered_map<std::string, int> &controllerUsage) {
+    if(!session) return;
+    auto &state = session->viewState;
+    state.framebufferW = runtime.framebufferW;
+
+    constexpr int kRowHeaderH = 175;
+    constexpr int kRowPad = 12;
+    constexpr int kPaneGap = 10;
+
+    int slotX = 0, slotY = 0, slotW = 0, slotH = 0;
+    sessionCellBounds(runtime, sessionIndex, slotX, slotY, slotW, slotH);
+
+    const int contentX = slotX + kRowPad;
+    const int contentW = std::max(1, slotW - (kRowPad * 2));
+    const int paneW0 = std::max(1, (contentW - (kPaneGap * 2)) / 3);
+    const int paneW1 = paneW0;
+    const int paneW2 = std::max(1, contentW - paneW0 - paneW1 - (kPaneGap * 2));
+    const int idealPaneH = std::max(1, static_cast<int>(static_cast<float>(paneW0) / kPanelAspectRatio));
+    const int contentH = std::min(idealPaneH, std::max(1, slotH - kRowHeaderH - (kRowPad * 2)));
+    const int contentY = slotY + slotH - kRowHeaderH - kRowPad - contentH;
+
+    state.framebufferH = contentH;
+    const bool isDisconnected = session->disconnected.load();
+    const UsbInfo *usbInfo = nullptr;
+    const auto usbIt = !session->serialNumber.empty() ? usbTopology.deviceMap.find(session->serialNumber) : usbTopology.deviceMap.end();
+    if(usbIt != usbTopology.deviceMap.end()) {
+        usbInfo = &usbIt->second;
+    }
+    const int controllerSharedCount = usbInfo ? (controllerUsage.count(usbInfo->controllerId) ? controllerUsage.at(usbInfo->controllerId) : 0) : 0;
+    Viewport vpRgb{contentX, contentY, paneW0, contentH};
+    Viewport vpDepth{contentX + paneW0 + kPaneGap, contentY, paneW1, contentH};
+    Viewport vpPoint{contentX + paneW0 + paneW1 + (kPaneGap * 2), contentY, paneW2, contentH};
+
+    if(!isDisconnected) {
+        vpRgb = drawTexturePane(session->texRgb, contentX, contentY, paneW0, contentH, kPanelAspectRatio);
+        vpDepth = drawTexturePane(session->texDepth, contentX + paneW0 + kPaneGap, contentY, paneW1, contentH, kPanelAspectRatio);
+
+        if(state.pointMode == PointRenderMode::CpuPoint) {
+            if(renderCpuPointPanelImage(state, kCpuPreviewW, kCpuPreviewH, session->cpuPointPreview)) {
+                uploadRgbTexture(session->texPointCpu, session->cpuPointPreview, kCpuPreviewW, kCpuPreviewH);
+            }
+            vpPoint = drawTexturePane(session->texPointCpu, contentX + paneW0 + paneW1 + (kPaneGap * 2), contentY, paneW2, contentH, kPanelAspectRatio);
+        } else {
+            vpPoint = drawPointPane(state, contentX + paneW0 + paneW1 + (kPaneGap * 2), contentY, paneW2, contentH, kPanelAspectRatio);
+        }
+    }
+
+    {
+        ImFont *fontL = runtime.fontLarge  ? runtime.fontLarge  : ImGui::GetFont();
+        ImFont *fontN = runtime.fontNormal ? runtime.fontNormal : ImGui::GetFont();
+        ImFont *fontS = runtime.fontSmall  ? runtime.fontSmall  : ImGui::GetFont();
+        ImDrawList *dl = ImGui::GetForegroundDrawList();
+
+        // ---- Session header background ----
+        const float hScreenY = (float)(runtime.framebufferH - slotY - slotH);
+        const ImVec2 hTL = {(float)slotX,          hScreenY};
+        const ImVec2 hBR = {(float)(slotX + slotW), hScreenY + (float)kRowHeaderH};
+        dl->AddRectFilled(hTL, hBR, IM_COL32(12, 15, 22, 235));
+        dl->AddLine({hTL.x, hBR.y - 1}, {hBR.x, hBR.y - 1}, IM_COL32(40, 46, 60, 255));
+
+        float hx = hTL.x + 14.0f;
+        float hy = hTL.y + 10.0f;
+        const float lhL = 38.0f;
+        const float lhS = 28.0f;
+        const float col2x = hTL.x + (float)slotW * 0.50f;
+
+        // Row 1: Device N  SN: xxx  [● LIVE / ● DISC]
+        {
+            std::string devStr = "Device " + std::to_string(session->deviceIndex);
+            ImVec2 devSz = fontL->CalcTextSizeA(30.0f, FLT_MAX, 0.0f, devStr.c_str());
+            dl->AddText(fontL, 30.0f, {hx, hy}, IM_COL32(255, 228, 90, 255), devStr.c_str());
+            if(!session->serialNumber.empty()) {
+                std::string snStr = "SN: " + session->serialNumber;
+                dl->AddText(fontS, 20.0f, {hx + devSz.x + 14.0f, hy + 9.0f}, IM_COL32(150, 150, 165, 255), snStr.c_str());
+            }
+            const char *statusStr  = isDisconnected ? "● DISC" : "● LIVE";
+            const ImU32 statusCol  = isDisconnected ? IM_COL32(240, 60, 60, 255) : IM_COL32(50, 220, 70, 255);
+            ImVec2 stSz = fontS->CalcTextSizeA(20.0f, FLT_MAX, 0.0f, statusStr);
+            dl->AddText(fontS, 20.0f, {hBR.x - stSz.x - 14.0f, hy + 9.0f}, statusCol, statusStr);
+        }
+        hy += lhL;
+
+        // Row 2: USB (left) | IMU (right)
+        {
+            std::string usbStr;
+            if(usbInfo) {
+                std::ostringstream uss;
+                uss << "USB: " << formatControllerDisplayName(usbTopology, usbInfo->controllerId, normalizeUsbControllerName(usbInfo->controllerName));
+                if(controllerSharedCount > 1) uss << " / shared " << controllerSharedCount;
+                usbStr = uss.str();
+            } else {
+                usbStr = "USB: -";
+            }
+            dl->AddText(fontS, 20.0f, {hx, hy}, IM_COL32(200, 200, 200, 255), usbStr.c_str());
+
+            OBAccelValue accel; bool imuOk;
+            { std::lock_guard<std::mutex> g(session->imuMutex); accel = session->lastAccel; imuOk = session->imuReady; }
+            std::ostringstream imuSS;
+            if(imuOk) {
+                imuSS << "IMU X:" << std::fixed << std::setprecision(2) << accel.x
+                      << " Y:" << accel.y << " Z:" << accel.z << " m/s2";
+            } else {
+                imuSS << "IMU: Waiting...";
+            }
+            dl->AddText(fontS, 20.0f, {col2x, hy}, IM_COL32(170, 170, 180, 255), imuSS.str().c_str());
+        }
+        hy += lhS;
+
+        // Row 3: FPS (left) | TEMP (right)
+        {
+            std::ostringstream fpsSS;
+            fpsSS << "FPS  Color:" << std::fixed << std::setprecision(1) << session->fpsColor.fps
+                  << "  Depth:" << session->fpsDepth.fps;
+            dl->AddText(fontS, 20.0f, {hx, hy}, IM_COL32(90, 255, 115, 255), fpsSS.str().c_str());
+
+            float cpuT, irT, ldmT; bool tempOk;
+            { std::lock_guard<std::mutex> g(session->tempMutex); cpuT = session->cpuTemp; irT = session->irTemp; ldmT = session->ldmTemp; tempOk = session->tempReady; }
+            std::ostringstream tempSS;
+            if(tempOk) {
+                tempSS << "TEMP  CPU:" << std::fixed << std::setprecision(1) << cpuT
+                       << "C  IR:" << irT << "C  LDM:" << ldmT << "C";
+            } else {
+                tempSS << "TEMP: --";
+            }
+            dl->AddText(fontS, 20.0f, {col2x, hy}, IM_COL32(170, 170, 180, 255), tempSS.str().c_str());
+        }
+        hy += lhS;
+
+        // Row 4: RES (show SENSOR resolutions — depth before align-to-color)
+        {
+            std::ostringstream resSS;
+            if(isDisconnected) {
+                resSS << "RES  --x--  Depth: --x--";
+            } else {
+                resSS << "RES  " << state.colorW << "x" << state.colorH
+                      << "  Depth: " << session->streamSettings.depthW << "x" << session->streamSettings.depthH;
+            }
+            dl->AddText(fontS, 20.0f, {hx, hy}, IM_COL32(90, 255, 115, 255), resSS.str().c_str());
+        }
+        hy += lhS;
+
+        // Row 5: PTS
+        {
+            std::ostringstream ptsSS;
+            ptsSS << "PTS  " << session->latestPoints << " pts   "
+                  << std::fixed << std::setprecision(1) << session->fpsPoint.fps << " fps";
+            dl->AddText(fontS, 20.0f, {hx, hy}, IM_COL32(90, 255, 115, 255), ptsSS.str().c_str());
+        }
+
+        // ---- Pane labels (top-left of each pane) ----
+        const auto paneLabel = [&](const Viewport &vp, const std::string &txt, ImU32 col) {
+            const float px = (float)vp.x + 5.0f;
+            const float py = (float)(runtime.framebufferH - vp.y - vp.h) + 5.0f;
+            dl->AddText(fontS, 20.0f, {px, py}, col, txt.c_str());
+        };
+
+        std::ostringstream label1;
+        label1 << "RGB ";
+        if(isDisconnected) { label1 << "--x-- --"; }
+        else { label1 << state.colorW << "x" << state.colorH << " " << state.colorFmt; }
+        label1 << "  FPS " << std::fixed << std::setprecision(1) << session->fpsColor.fps;
+        paneLabel(vpRgb, label1.str(), IM_COL32(255, 255, 255, 210));
+
+        std::ostringstream label2;
+        label2 << "DEPTH ";
+        if(isDisconnected) { label2 << "--x-- --"; }
+        else { label2 << session->streamSettings.depthW << "x" << session->streamSettings.depthH << " " << state.depthFmt; }
+        label2 << "  FPS " << std::fixed << std::setprecision(1) << session->fpsDepth.fps;
+        paneLabel(vpDepth, label2.str(), IM_COL32(255, 255, 255, 210));
+
+        std::ostringstream label3;
+        if(isDisconnected)                                          { label3 << "POINT [XYZRGB]"; }
+        else if(state.pointMode == PointRenderMode::GpuMesh)       { label3 << "MESH [XYZRGB]"; }
+        else if(state.pointMode == PointRenderMode::GpuPoint)      { label3 << "POINT [XYZRGB]"; }
+        else                                                        { label3 << "CPU POINT [XYZRGB]"; }
+        paneLabel(vpPoint, label3.str(), IM_COL32(255, 255, 255, 210));
+
+        std::ostringstream ptStat;
+        ptStat << "pts " << session->latestPoints << "  FPS " << std::fixed << std::setprecision(1) << session->fpsPoint.fps;
+        {
+            const float px = (float)vpPoint.x + 6.0f;
+            const float py = (float)(runtime.framebufferH - vpPoint.y - vpPoint.h) + 30.0f;
+            dl->AddText(fontS, 20.0f, {px, py}, IM_COL32(190, 190, 210, 210), ptStat.str().c_str());
+        }
+
+        // ---- Disconnection overlay messages ----
+        if(isDisconnected) {
+            drawFilledRect(vpRgb, 0.10f, 0.10f, 0.10f, 0.58f);
+            drawFilledRect(vpDepth, 0.10f, 0.10f, 0.10f, 0.58f);
+            drawFilledRect(vpPoint, 0.10f, 0.10f, 0.10f, 0.58f);
+            const auto discMsg = [&](const Viewport &vp, const char *l1, const char *l2, const char *l3) {
+                const float cx = (float)vp.x + (float)vp.w * 0.5f;
+                const float cy = (float)(runtime.framebufferH - vp.y) - (float)vp.h * 0.5f;
+                auto sz1 = fontN->CalcTextSizeA(23.0f, FLT_MAX, 0.0f, l1);
+                auto sz2 = fontS->CalcTextSizeA(20.0f, FLT_MAX, 0.0f, l2);
+                auto sz3 = fontS->CalcTextSizeA(20.0f, FLT_MAX, 0.0f, l3);
+                dl->AddText(fontN, 23.0f, {cx - sz1.x * 0.5f, cy - 36.0f}, IM_COL32(240, 240, 240, 255), l1);
+                dl->AddText(fontS, 20.0f, {cx - sz2.x * 0.5f, cy - 4.0f},  IM_COL32(200, 200, 200, 255), l2);
+                dl->AddText(fontS, 20.0f, {cx - sz3.x * 0.5f, cy + 16.0f}, IM_COL32(175, 175, 175, 255), l3);
+            };
+            discMsg(vpRgb,   "DISCONNECTED", "Camera unplugged", "Reconnects automatically");
+            discMsg(vpDepth, "DISCONNECTED", "DEPTH stopped",    "Waiting reconnect");
+            discMsg(vpPoint, "DISCONNECTED", "POINT stopped",    "Waiting reconnect");
+        }
+    }
+}
+
+void renderSidebar(AppRuntime &runtime) {
+    constexpr ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav |
+        ImGuiWindowFlags_NoFocusOnAppearing;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,   ImVec2(4, 3));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.04f, 0.06f, 0.97f));
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2((float)kSidebarW, (float)runtime.framebufferH));
+
+    ImGui::Begin("##sidebar", nullptr, flags);
+
+    ImFont *fontL = runtime.fontLarge  ? runtime.fontLarge  : ImGui::GetFont();
+    ImFont *fontN = runtime.fontNormal ? runtime.fontNormal : ImGui::GetFont();
+    ImFont *fontS = runtime.fontSmall  ? runtime.fontSmall  : ImGui::GetFont();
+
+    // Helpers and colors used by multiple sections
+    const ImVec4 kSectionHeaderCol = ImVec4(0.38f, 0.88f, 0.52f, 1.0f);
+    const auto drawSectionSeparator = []() {
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+    };
+    const auto wrapText = [](const std::string &text, size_t maxChars) {
+        std::vector<std::string> lines;
+        std::istringstream stream(text);
+        std::string word, line;
+        while(stream >> word) {
+            std::string candidate = line.empty() ? word : (line + " " + word);
+            if(!line.empty() && candidate.size() > maxChars) {
+                lines.push_back(line);
+                line = word;
+            } else {
+                line = candidate;
+            }
+        }
+        if(!line.empty()) lines.push_back(line);
+        if(lines.empty()) lines.push_back(text);
+        return lines;
+    };
+
+    // Topology snapshots are used by both USB TOPOLOGY section and by the
+    // session slot renderer (via the caller), so grab once.
+    const SystemUsbTopology usbTopology       = snapshotUsbTopology(runtime);
+    const auto              controllerUsage   = snapshotControllerUsage(runtime);
+
+    //
+    // ===== Title =====
+    //
+    ImGui::PushFont(fontL);
+    ImGui::TextColored(ImVec4(0.92f, 0.92f, 0.97f, 1.0f), "Femto Bolt");
+    ImGui::PopFont();
+
+    const double renderFps = runtime.sessions.empty() ? 0.0 : runtime.sessions.front()->fpsLog.fps;
+    ImGui::SameLine();
+    ImGui::PushFont(fontS);
+    ImGui::TextDisabled("%.0f FPS", renderFps);
+    ImGui::TextDisabled("Monitor");
+    ImGui::PopFont();
+
+    drawSectionSeparator();
+
+    //
+    // ===== VIEW (display controls) =====
+    //
+    ImGui::TextColored(kSectionHeaderCol, "VIEW");
+    {
+        const PointRenderMode currentMode = runtime.sessions.empty()
+            ? PointRenderMode::GpuMesh
+            : runtime.sessions.front()->viewState.pointMode;
+        std::string modeLabel = std::string("表示モード: ") + toPointModeText(currentMode);
+        if(ImGui::Button(modeLabel.c_str(), ImVec2(-1, 36))) {
+            cycleAllSessionsPointMode(runtime);
+        }
+        ImGui::PushFont(fontS);
+        ImGui::TextDisabled("MESH → POINT → CPU POINT  (M)");
+        ImGui::PopFont();
+
+        ImGui::Spacing();
+
+        if(ImGui::Button("視点をリセット", ImVec2(-1, 36))) {
+            resetAllSessionsView(runtime);
+        }
+        ImGui::PushFont(fontS);
+        ImGui::TextDisabled("角度・ZOOM・パン 初期化  (R)");
+        ImGui::PopFont();
+    }
+
+    drawSectionSeparator();
+
+    //
+    // ===== STREAM (sensor resolution / fps presets) =====
+    //
+    ImGui::TextColored(kSectionHeaderCol, "STREAM");
+    {
+        static const std::pair<int,int> kDepthPresets[] = {
+            {320, 288}, {640, 576}, {512, 512}, {1024, 1024}
+        };
+        static const std::pair<int,int> kColorPresets[] = {
+            {640, 480}, {1280, 720}, {1920, 1080}
+        };
+        static const int kFpsPresets[] = { 5, 15, 30 };
+
+        const auto nextIndex = [](const auto *arr, size_t n, int curW, int curH) -> size_t {
+            for(size_t i = 0; i < n; ++i) {
+                if(arr[i].first == curW && arr[i].second == curH) return (i + 1) % n;
+            }
+            return 0;
+        };
+        const auto nextFpsIndex = [](int curFps) -> size_t {
+            constexpr size_t n = sizeof(kFpsPresets)/sizeof(int);
+            for(size_t i = 0; i < n; ++i) {
+                if(kFpsPresets[i] == curFps) return (i + 1) % n;
+            }
+            return 0;
+        };
+
+        StreamSettings &s = runtime.streamSettings;
+
+        char depthLabel[64];
+        std::snprintf(depthLabel, sizeof(depthLabel), "Depth: %d x %d", s.depthW, s.depthH);
+        if(ImGui::Button(depthLabel, ImVec2(-1, 36))) {
+            size_t idx = nextIndex(kDepthPresets, 4, s.depthW, s.depthH);
+            s.depthW = kDepthPresets[idx].first;
+            s.depthH = kDepthPresets[idx].second;
+            applyStreamSettingsToAllSessions(runtime);
+        }
+
+        ImGui::Spacing();
+
+        char colorLabel[64];
+        std::snprintf(colorLabel, sizeof(colorLabel), "Color: %d x %d", s.colorW, s.colorH);
+        if(ImGui::Button(colorLabel, ImVec2(-1, 36))) {
+            size_t idx = nextIndex(kColorPresets, 3, s.colorW, s.colorH);
+            s.colorW = kColorPresets[idx].first;
+            s.colorH = kColorPresets[idx].second;
+            applyStreamSettingsToAllSessions(runtime);
+        }
+
+        ImGui::Spacing();
+
+        char fpsLabel[32];
+        std::snprintf(fpsLabel, sizeof(fpsLabel), "FPS: %d", s.fps);
+        if(ImGui::Button(fpsLabel, ImVec2(-1, 36))) {
+            size_t idx = nextFpsIndex(s.fps);
+            s.fps = kFpsPresets[idx];
+            applyStreamSettingsToAllSessions(runtime);
+        }
+
+        ImGui::PushFont(fontS);
+        ImGui::TextDisabled("クリックで次のプリセット / 全カメラ同時");
+        ImGui::PopFont();
+    }
+
+    drawSectionSeparator();
+
+    //
+    // ===== USB TOPOLOGY (which camera is on which controller) =====
+    //
+    ImGui::TextColored(kSectionHeaderCol, "USB TOPOLOGY");
+    ImGui::PushFont(fontS);
+    for(const auto &controllerId : usbTopology.controllers) {
+        const auto nameIt = usbTopology.controllerNames.find(controllerId);
+        const std::string rawName = (nameIt != usbTopology.controllerNames.end()) ? nameIt->second : "Unknown Controller";
+        const std::string label = formatControllerDisplayName(usbTopology, controllerId, normalizeUsbControllerName(rawName));
+        const int usage = controllerUsage.count(controllerId) ? controllerUsage.at(controllerId) : 0;
+        const bool shared = usage > 1;
+        const bool empty  = usage == 0;
+        const ImVec4 ctrlColor = shared
+            ? ImVec4(1.0f, 0.35f, 0.35f, 1.0f)
+            : ImVec4(0.72f, 0.92f, 0.92f, 1.0f);
+        for(const auto &ln : wrapText(label, 24)) {
+            ImGui::TextColored(ctrlColor, "%s", ln.c_str());
+        }
+        if(empty) {
+            ImGui::TextDisabled("  (Empty)");
+        } else {
+            for(const auto &sess : runtime.sessions) {
+                if(!sess || sess->serialNumber.empty()) continue;
+                const auto usbIt = usbTopology.deviceMap.find(sess->serialNumber);
+                if(usbIt == usbTopology.deviceMap.end()) continue;
+                if(usbIt->second.controllerId != controllerId) continue;
+                ImGui::TextColored(ImVec4(0.55f, 1.0f, 0.55f, 1.0f), "  > Device %d", sess->deviceIndex);
+            }
+        }
+        if(shared) {
+            for(const auto &ln : wrapText("shared by multiple cameras", 22)) {
+                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", ln.c_str());
+            }
+        }
+        ImGui::Spacing();
+    }
+    ImGui::PopFont();
+
+    drawSectionSeparator();
+
+    //
+    // ===== GPU (OpenGL vendor/renderer/version) =====
+    //
+    ImGui::TextColored(kSectionHeaderCol, "GPU");
+    {
+        const auto clip = [](const std::string &s, size_t mx) -> std::string {
+            return s.size() > mx ? s.substr(0, mx - 2) + ".." : s;
+        };
+        ImGui::PushFont(fontS);
+        ImGui::TextColored(ImVec4(0.80f, 0.80f, 0.90f, 1.0f), "%s", clip(runtime.glRenderer, 28).c_str());
+        ImGui::TextDisabled("%s", clip(runtime.glVendor,   28).c_str());
+        ImGui::TextDisabled("%s", clip(runtime.glVersion,  28).c_str());
+        ImGui::PopFont();
+    }
+
+    // Bottom-aligned recovery panel
+    {
+        constexpr float kResetPanelH = 240.0f;
+        const float bottomY = ImGui::GetWindowHeight() - kResetPanelH - 10.0f;
+        if(ImGui::GetCursorPosY() < bottomY) {
+            ImGui::SetCursorPosY(bottomY);
+        }
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        const bool busy = isUsbResetBusy();
+
+        ImGui::TextColored(ImVec4(0.95f, 0.60f, 0.30f, 1.0f), "RECOVERY");
+        ImGui::Spacing();
+
+        if(busy) ImGui::BeginDisabled();
+        if(ImGui::Button(busy ? "処理中..." : "USBをリセット", ImVec2(-1, 38))) {
+            requestAllUsbHostReset();
+        }
+        if(busy) ImGui::EndDisabled();
+        ImGui::PushFont(fontS);
+        ImGui::TextDisabled("カメラが認識されない時に");
+        ImGui::PopFont();
+
+        ImGui::Spacing();
+
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.35f, 0.20f, 0.10f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.50f, 0.30f, 0.15f, 1.0f));
+        if(ImGui::Button("アプリを再起動", ImVec2(-1, 38))) {
+            restartApplication();
+        }
+        ImGui::PopStyleColor(2);
+        ImGui::PushFont(fontS);
+        ImGui::TextDisabled("USBリセット後はこれを押す");
+        ImGui::PopFont();
+    }
+
+    ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(3);
+}
