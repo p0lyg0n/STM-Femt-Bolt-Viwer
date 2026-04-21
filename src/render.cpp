@@ -94,7 +94,9 @@ void renderSessionSlot(
         ImFont *fontL = runtime.fontLarge  ? runtime.fontLarge  : ImGui::GetFont();
         ImFont *fontN = runtime.fontNormal ? runtime.fontNormal : ImGui::GetFont();
         ImFont *fontS = runtime.fontSmall  ? runtime.fontSmall  : ImGui::GetFont();
-        ImDrawList *dl = ImGui::GetForegroundDrawList();
+        // Draw device header + pane labels on the background draw list so that
+        // ImGui windows (notably tooltips) render ON TOP of them instead of being covered.
+        ImDrawList *dl = ImGui::GetBackgroundDrawList();
 
         // ---- Session header background ----
         const float hScreenY = (float)(runtime.framebufferH - slotY - slotH);
