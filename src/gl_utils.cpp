@@ -358,15 +358,34 @@ bool renderCpuPointPanelImage(const CameraViewState &s, int w, int h, std::vecto
     return true;
 }
 
+namespace {
+
+// Computes the minimum height a session cell needs to show its header (Device /
+// USB / IMU / TEMP) plus three 16:9 panes side by side at the given cell width.
+// Panes are width-driven (cellW/3) with aspect fixed to kPanelAspectRatio, so
+// their height follows. Any cellH above this value would be wasted empty space
+// below the panes — we pack multiple cells vertically using this natural size.
+int naturalSessionCellHeight(int cellW) {
+    const int paneW = std::max(1, (cellW - (kSessionPaneGap * 2)) / 3);
+    const int paneH = std::max(1, static_cast<int>(static_cast<float>(paneW) / kPanelAspectRatio));
+    return kSessionRowHeaderH + paneH + (kSessionRowPad * 2);
+}
+
+} // namespace
+
 void sessionRowBounds(const AppRuntime &runtime, size_t sessionIndex, int &rowY, int &rowH) {
     const int count = std::max<int>(1, static_cast<int>(runtime.sessions.size()));
     constexpr int kSessionGap = 12;
     const int totalGap = (count > 1) ? (count - 1) * kSessionGap : 0;
     const auto mainVp = mainContentViewport(runtime);
     const int availableH = std::max(1, mainVp.h - totalGap);
-    const int rowHBase = std::max(1, availableH / count);
+    // Use the natural (content-sized) cell height when it fits — this packs
+    // rows up to the top with no empty band below each camera. If the window is
+    // too short to fit them naturally, fall back to dividing the space equally.
+    const int natural = naturalSessionCellHeight(mainVp.w);
+    const int rowHBase = std::max(1, std::min(natural, availableH / count));
     rowY = std::max(0, mainVp.h - (static_cast<int>(sessionIndex) + 1) * rowHBase - static_cast<int>(sessionIndex) * kSessionGap);
-    rowH = (sessionIndex == 0) ? std::max(1, mainVp.h - rowY) : rowHBase;
+    rowH = rowHBase;
     rowY += mainVp.y;
 }
 
@@ -388,7 +407,11 @@ void sessionCellBounds(const AppRuntime &runtime, size_t sessionIndex, int &cell
     const int totalGapX = (cols - 1) * kCellGapX;
     const int totalGapY = (rows - 1) * kCellGapY;
     cellW = std::max(1, (mainVp.w - totalGapX) / cols);
-    cellH = std::max(1, (mainVp.h - totalGapY) / rows);
+    // Same natural-height packing as the vertical layout: cell height is the
+    // minimum needed to show header + 16:9 panes at the current cellW, capped
+    // by the available space per row.
+    const int natural = naturalSessionCellHeight(cellW);
+    cellH = std::max(1, std::min(natural, (mainVp.h - totalGapY) / rows));
 
     const int row = static_cast<int>(sessionIndex) / cols;
     const int col = static_cast<int>(sessionIndex) % cols;
