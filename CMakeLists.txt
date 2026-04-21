@@ -32,7 +32,7 @@ target_include_directories(imgui_lib PUBLIC
 )
 target_link_libraries(imgui_lib PUBLIC opengl32)
 
-set(ORBBEC_SDK_DIR "${CMAKE_SOURCE_DIR}/../legacy_20260420_pre_rebuild/_vendor/OrbbecSDK" CACHE PATH "Path to OrbbecSDK root")
+set(ORBBEC_SDK_DIR "C:/Program Files/OrbbecSDK 2.7.6" CACHE PATH "Path to OrbbecSDK root")
 if(NOT EXISTS "${ORBBEC_SDK_DIR}/include/libobsensor/ObSensor.hpp")
   message(FATAL_ERROR "Orbbec SDK headers not found. ORBBEC_SDK_DIR=${ORBBEC_SDK_DIR}")
 endif()

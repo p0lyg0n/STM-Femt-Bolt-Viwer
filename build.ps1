@@ -10,7 +10,7 @@ if(!(Test-Path $cmake)) { throw "cmake not found: $cmake" }
 
 $orbbecSdkDir = $env:ORBBEC_SDK_DIR
 if([string]::IsNullOrWhiteSpace($orbbecSdkDir)) {
-  $orbbecSdkDir = Join-Path $root "..\\legacy_20260420_pre_rebuild\\_vendor\\OrbbecSDK"
+  $orbbecSdkDir = "C:\Program Files\OrbbecSDK 2.7.6"
 }
 if(!(Test-Path (Join-Path $orbbecSdkDir "include\\libobsensor\\ObSensor.hpp"))) {
   throw "Orbbec SDK headers not found. ORBBEC_SDK_DIR=$orbbecSdkDir"
