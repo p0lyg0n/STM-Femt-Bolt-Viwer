@@ -650,7 +650,14 @@ void registerDeviceHotplugHandler(ob::Context &context, AppRuntime &runtime) {
                                 session->reconnecting.store(true);
                                 startCameraSession(session);
                                 logSession(session, "recovered via device-changed callback");
-                                session->reattachNotBefore = std::chrono::steady_clock::time_point::min();
+                                // Stability window: for the next 5s, ignore any
+                                // further "added" events for this session. The
+                                // SDK can fire duplicate added callbacks right
+                                // after a real attach (e.g. during USB re-enum),
+                                // and our port-switch branch above would treat
+                                // that as a reason to disconnect the session we
+                                // just brought up.
+                                session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::seconds(5);
                                 session->attachInProgress.store(false);
                             } catch(const std::exception &e) {
                                 session->attachInProgress.store(false);

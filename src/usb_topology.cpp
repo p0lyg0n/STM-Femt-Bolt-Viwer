@@ -235,8 +235,11 @@ void startUsbTopologyWorker(ob::Context &context, AppRuntime &runtime) {
                                         // callback (faster) or the next poll cycle after backoff.
                                         session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::seconds(5);
                                     } else {
-                                        // Real success: clear the backoff.
-                                        session->reattachNotBefore = std::chrono::steady_clock::time_point::min();
+                                        // Real success: set a 5s stability window so
+                                        // stray duplicate "added" hotplug events don't
+                                        // trigger the port-switch branch and tear the
+                                        // fresh session back down.
+                                        session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::seconds(5);
                                     }
                                     session->attachInProgress.store(false);
                                 } catch(const std::exception &e) {
