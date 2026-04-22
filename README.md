@@ -214,6 +214,7 @@ src/
 - **`v*` タグ（例: `v1.0.0`）を push** した場合は、同名の正式リリースとして公開
 - CI 実行環境は **self-hosted Windows runner**（Orbbec SDK のインストールが必要なため GitHub-hosted runner は使えません）
 - ランナー側は `C:\Program Files\OrbbecSDK 2.7.6` に SDK がある前提
+- **ランナーはサービス化していません。push 前に `C:\actions-runner\run.cmd` を手動起動する必要があります** → [.claude/skills/release-self-hosted-runner/SKILL.md](.claude/skills/release-self-hosted-runner/SKILL.md)
 - 運用詳細: [docs/RELEASE_RULE_JA.md](docs/RELEASE_RULE_JA.md)
 
 ---
