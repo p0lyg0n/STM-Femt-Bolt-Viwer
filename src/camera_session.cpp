@@ -341,14 +341,23 @@ void startImuSensors(const std::shared_ptr<CameraSession> &session) {
 }
 
 void pollDeviceTemperature(const std::shared_ptr<CameraSession> &session) {
-    if(!session || !session->device || session->disconnected.load()) return;
+    if(!session || session->disconnected.load()) return;
     const auto now = std::chrono::steady_clock::now();
     if(std::chrono::duration_cast<std::chrono::seconds>(now - session->lastTempPoll).count() < 2) return;
     session->lastTempPoll = now;
+    // Snapshot device under the same mutex that disconnect/attach use so we
+    // don't read session->device while another thread is resetting it.
+    std::shared_ptr<ob::Device> device;
+    {
+        std::lock_guard<std::mutex> guard(session->latestFrameMutex);
+        if(session->disconnected.load()) return;
+        device = session->device;
+    }
+    if(!device) return;
     try {
         OBDeviceTemperature temp;
         uint32_t dataSize = sizeof(temp);
-        session->device->getStructuredData(OB_STRUCT_DEVICE_TEMPERATURE, reinterpret_cast<uint8_t *>(&temp), &dataSize);
+        device->getStructuredData(OB_STRUCT_DEVICE_TEMPERATURE, reinterpret_cast<uint8_t *>(&temp), &dataSize);
         std::lock_guard<std::mutex> g(session->tempMutex);
         session->cpuTemp = temp.cpuTemp;
         session->irTemp = temp.irTemp;
@@ -659,12 +668,14 @@ void updateSessionFromFrames(const std::shared_ptr<CameraSession> &session) {
     // same mutex those writers use, then operate on the local copies. Even if
     // the writer resets session->pipeline a nanosecond later, our locals keep
     // the objects alive for the duration of this frame.
-    std::shared_ptr<ob::Align> align;
+    std::shared_ptr<ob::Align>    align;
+    std::shared_ptr<ob::Pipeline> pipeline;
     std::shared_ptr<ob::FrameSet> frameSet;
     {
         std::lock_guard<std::mutex> guard(session->latestFrameMutex);
         if(session->disconnected.load()) return;
         align    = session->align;
+        pipeline = session->pipeline;
         frameSet = std::move(session->latestFrameSet);
     }
     if(!frameSet) return;
@@ -684,7 +695,9 @@ void updateSessionFromFrames(const std::shared_ptr<CameraSession> &session) {
     // Depth-sensor resolution (matching Depth size).
     auto irFrame = frameSet->irFrame();
 
-    tryFetchCameraParam(session->pipeline, session->cameraParamReady, session->cameraParam);
+    // Use the local pipeline snapshot (NOT session->pipeline) — another thread
+    // may reset the session's ptr right now; our local copy keeps the object alive.
+    tryFetchCameraParam(pipeline, session->cameraParamReady, session->cameraParam);
 
     if(colorFrame && convertColorFrameToRgb(colorFrame, session->rgb, session->viewState.colorW, session->viewState.colorH)) {
         uploadRgbTexture(session->texRgb, session->rgb, session->viewState.colorW, session->viewState.colorH);

@@ -408,7 +408,12 @@ int main() try {
         saved.vsync     = runtime.vsync;
         app_settings::save(saved);
     }
-    stopUsbTopologyWorker(runtime);
+    // Signal the USB topology worker to stop but DO NOT join it here.
+    // If the worker is currently blocked waiting for a session's
+    // lifecycleMutex (held by an in-flight Orbbec hotplug callback running
+    // pipeline->start() on a bad USB device), join() would hang the whole
+    // window-close for several seconds. _Exit below kills all threads.
+    runtime.usbTopologyStop.store(true);
 
     std::cout.flush();
     std::cerr.flush();
