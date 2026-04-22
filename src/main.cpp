@@ -6,6 +6,7 @@
 #include "input.h"
 #include "i18n.h"
 #include "app_settings.h"
+#include "log_util.h"
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -31,8 +32,10 @@ int estimateDecimatedPointCount(const GpuMesh &mesh, int targetPoints) {
 }
 
 int runCpuFallbackMode(const std::shared_ptr<ob::Pipeline> &pipeline, const std::shared_ptr<ob::Align> &align) {
-    std::cout << "[Fallback] OpenGL unavailable. Running CPU fallback mode (no GPU viewer)." << std::endl;
-    std::cout << "[Fallback] Press Q or ESC in this console to exit." << std::endl;
+    std::cout << logc::yellow << "[WARN]" << logc::reset
+              << logc::yellow << " [Fallback] OpenGL unavailable. Running CPU fallback mode (no GPU viewer)." << logc::reset << std::endl;
+    std::cout << logc::yellow << "[WARN]" << logc::reset
+              << logc::yellow << " [Fallback] Press Q or ESC in this console to exit." << logc::reset << std::endl;
 
     std::vector<uint8_t> rgb;
     std::vector<uint8_t> depthPseudo;
@@ -77,11 +80,12 @@ int runCpuFallbackMode(const std::shared_ptr<ob::Pipeline> &pipeline, const std:
 
         fpsLog.tick();
         if(fpsLog.frameCount == 0) {
-            std::cout << "[Fallback FPS] color=" << std::fixed << std::setprecision(1) << fpsColor.fps
-                      << " depth=" << fpsDepth.fps
-                      << " point=" << fpsPoint.fps
-                      << " drawPts=" << drawPoints
-                      << " mode=CPU" << std::endl;
+            std::cout << logc::brightYellow << "[Fallback]" << logc::reset
+                      << logc::dim << " color=" << logc::reset << std::fixed << std::setprecision(1) << fpsColor.fps
+                      << logc::dim << " depth=" << logc::reset << fpsDepth.fps
+                      << logc::dim << " point=" << logc::reset << fpsPoint.fps
+                      << logc::dim << " drawPts=" << logc::reset << drawPoints
+                      << logc::dim << " mode=" << logc::reset << "CPU" << std::endl;
         }
     }
     return 0;
@@ -90,24 +94,41 @@ int runCpuFallbackMode(const std::shared_ptr<ob::Pipeline> &pipeline, const std:
 } // namespace
 
 int main() try {
-    std::cout << "STM Femto Bolt Viewer unified GLFW window (no OpenCV UI)" << std::endl;
+    logc::enableVirtualTerminal();
+
+    std::cout << logc::brightCyan << logc::bold
+              << "==================================================\n"
+              << "  STM Femto Bolt Viewer\n"
+              << "==================================================" << logc::reset << "\n";
 
     // Load persisted user preferences (language + display mode + stream preset).
     const app_settings::AppSettings loadedSettings = app_settings::load();
     i18n::setLang(loadedSettings.lang);
+    std::cout << logc::cyan << "[INFO]" << logc::reset
+              << " language=" << i18n::langCode(loadedSettings.lang)
+              << "  mode=" << toPointModeText(loadedSettings.pointMode)
+              << "  depth=" << loadedSettings.stream.depthW << "x" << loadedSettings.stream.depthH
+              << "  color=" << loadedSettings.stream.colorW << "x" << loadedSettings.stream.colorH
+              << "  fps=" << loadedSettings.stream.fps
+              << (loadedSettings.showIr ? "  showIr=on" : "")
+              << std::endl;
 
     ob::Context context;
     auto deviceList = context.queryDeviceList();
     if(!deviceList || getDeviceListCount(deviceList) == 0) {
-        std::cerr << "No Orbbec device found." << std::endl;
+        std::cerr << logc::brightRed << logc::bold << "[ERR ]" << logc::reset
+                  << logc::red << " No Orbbec device found." << logc::reset << std::endl;
         return 1;
     }
 
     auto sessions = createCameraSessionsFromDeviceList(deviceList, 4);
     if(sessions.empty()) {
-        std::cerr << "Failed to create camera sessions." << std::endl;
+        std::cerr << logc::brightRed << logc::bold << "[ERR ]" << logc::reset
+                  << logc::red << " Failed to create camera sessions." << logc::reset << std::endl;
         return 1;
     }
+    std::cout << logc::brightGreen << "[OK  ]" << logc::reset
+              << " " << sessions.size() << " camera(s) detected." << std::endl;
 
     // Apply loaded stream preset to every session BEFORE startCameraSession so the
     // pipeline starts with the last-used resolution/fps instead of the built-in defaults.
@@ -118,7 +139,8 @@ int main() try {
     }
 
     if(!glfwInit()) {
-        std::cerr << "GLFW init failed. Switching to CPU fallback." << std::endl;
+        std::cerr << logc::yellow << "[WARN]" << logc::reset
+                  << logc::yellow << " GLFW init failed. Switching to CPU fallback." << logc::reset << std::endl;
         auto fallbackPipeline = sessions.front()->pipeline;
         auto fallbackAlign = sessions.front()->align;
         startCameraSession(sessions.front());
@@ -132,7 +154,8 @@ int main() try {
     const int windowH = (sessions.size() > 2) ? 1080 : ((sessions.size() > 1) ? 900 : 720);
     GLFWwindow *window = glfwCreateWindow(windowW, windowH, kWindowTitle, nullptr, nullptr);
     if(!window) {
-        std::cerr << "GLFW window create failed. Switching to CPU fallback." << std::endl;
+        std::cerr << logc::yellow << "[WARN]" << logc::reset
+                  << logc::yellow << " GLFW window create failed. Switching to CPU fallback." << logc::reset << std::endl;
         glfwTerminate();
         auto fallbackPipeline = sessions.front()->pipeline;
         auto fallbackAlign = sessions.front()->align;
@@ -161,9 +184,9 @@ int main() try {
         runtime.glVendor   = v   ? v   : "Unknown";
         runtime.glRenderer = r   ? r   : "Unknown";
         runtime.glVersion  = ver ? ver : "Unknown";
-        std::cout << "GL Vendor:   " << runtime.glVendor   << "\n"
-                  << "GL Renderer: " << runtime.glRenderer << "\n"
-                  << "GL Version:  " << runtime.glVersion  << "\n";
+        std::cout << logc::cyan << "[INFO]" << logc::reset << " GL Vendor:   " << runtime.glVendor   << "\n"
+                  << logc::cyan << "[INFO]" << logc::reset << " GL Renderer: " << runtime.glRenderer << "\n"
+                  << logc::cyan << "[INFO]" << logc::reset << " GL Version:  " << runtime.glVersion  << "\n";
     }
     runtime.activeSessionIndex = 0;
 
@@ -276,9 +299,11 @@ int main() try {
         try {
             startCameraSession(session);
         } catch(const std::exception &e) {
-            std::cerr << "Failed to start camera session " << session->deviceIndex << ": " << e.what() << std::endl;
+            std::cerr << logc::brightRed << logc::bold << "[ERR ]" << logc::reset
+                      << logc::red << " Failed to start camera session " << session->deviceIndex << ": " << e.what() << logc::reset << std::endl;
         } catch(...) {
-            std::cerr << "Failed to start camera session " << session->deviceIndex << ": unknown error" << std::endl;
+            std::cerr << logc::brightRed << logc::bold << "[ERR ]" << logc::reset
+                      << logc::red << " Failed to start camera session " << session->deviceIndex << ": unknown error" << logc::reset << std::endl;
         }
     }
 
@@ -289,8 +314,12 @@ int main() try {
 
     startUsbTopologyWorker(context, runtime);
 
-    std::cout << "Controls: left drag rotate (right pane), right drag pan, wheel zoom, r reset, m mode-cycle(GPU MESH/GPU POINT/CPU POINT), q/ESC exit." << std::endl;
-    std::cout << "Multi-camera mode: 1-2台は縦分割、3-4台は2x2グリッドで表示します。" << std::endl;
+    std::cout << logc::cyan << "[INFO]" << logc::reset
+              << " Controls: left drag rotate / right drag pan / wheel zoom / r reset / m mode / q ESC exit" << std::endl;
+    std::cout << logc::cyan << "[INFO]" << logc::reset
+              << " Layout: 1-2台 縦分割 / 3-4台 縦 1xN (短い窓では 2x2 に自動切替)" << std::endl;
+    std::cout << logc::gray
+              << "--------------------------------------------------" << logc::reset << std::endl;
 
     while(!glfwWindowShouldClose(window)) {
         for(const auto &session : sessions) {
@@ -324,11 +353,12 @@ int main() try {
         for(const auto &session : sessions) {
             session->fpsLog.tick();
             if(session->fpsLog.frameCount == 0) {
-                std::cout << "[Device " << session->deviceIndex << "] color=" << std::fixed << std::setprecision(1) << session->fpsColor.fps
-                          << " depth=" << session->fpsDepth.fps
-                          << " point=" << session->fpsPoint.fps
-                          << " drawPts=" << session->latestPoints
-                          << " mode=" << toPointModeText(session->viewState.pointMode) << std::endl;
+                std::cout << logc::brightYellow << "[Device " << session->deviceIndex << "]" << logc::reset
+                          << logc::dim << " color=" << logc::reset << std::fixed << std::setprecision(1) << session->fpsColor.fps
+                          << logc::dim << " depth=" << logc::reset << session->fpsDepth.fps
+                          << logc::dim << " point=" << logc::reset << session->fpsPoint.fps
+                          << logc::dim << " drawPts=" << logc::reset << session->latestPoints
+                          << logc::dim << " mode=" << logc::reset << toPointModeText(session->viewState.pointMode) << std::endl;
             }
         }
     }
@@ -364,12 +394,16 @@ int main() try {
     }
     return 0;
 } catch(const ob::Error &e) {
-    std::cerr << "Orbbec error: function=" << e.getName() << " args=" << e.getArgs() << " message=" << e.getMessage() << " type=" << e.getExceptionType() << std::endl;
+    std::cerr << logc::brightRed << logc::bold << "[ERR ]" << logc::reset
+              << logc::red << " Orbbec error: function=" << e.getName() << " args=" << e.getArgs()
+              << " message=" << e.getMessage() << " type=" << e.getExceptionType() << logc::reset << std::endl;
     return 1;
 } catch(const std::exception &e) {
-    std::cerr << "std::exception: " << e.what() << std::endl;
+    std::cerr << logc::brightRed << logc::bold << "[ERR ]" << logc::reset
+              << logc::red << " std::exception: " << e.what() << logc::reset << std::endl;
     return 1;
 } catch(...) {
-    std::cerr << "unknown exception" << std::endl;
+    std::cerr << logc::brightRed << logc::bold << "[ERR ]" << logc::reset
+              << logc::red << " unknown exception" << logc::reset << std::endl;
     return 1;
 }

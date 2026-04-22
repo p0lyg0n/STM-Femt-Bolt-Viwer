@@ -1,4 +1,5 @@
 #include "camera_session.h"
+#include "log_util.h"
 
 #include <algorithm>
 #include <chrono>
@@ -175,8 +176,25 @@ std::shared_ptr<ob::Config> createStreamConfig(const StreamSettings &settings) {
 
 void logSession(const std::shared_ptr<CameraSession> &session, const std::string &message) {
     if(!session) return;
-    std::cerr << "[" << currentTimestampText() << "][Device " << session->deviceIndex << "]";
-    if(!session->serialNumber.empty()) std::cerr << "[SN " << session->serialNumber << "]";
+    // Pick color by the message body so frequent status lines are easy to scan:
+    // errors/timeouts in red, recovery/restart in yellow, success/started in green.
+    auto containsAny = [&](std::initializer_list<const char *> needles) {
+        for(const char *n : needles) if(message.find(n) != std::string::npos) return true;
+        return false;
+    };
+    const char *levelTag   = logc::gray;
+    const char *levelLabel = "[LOG ]";
+    if(containsAny({"failed", "error", "timeout"})) {
+        levelTag = logc::brightRed; levelLabel = "[ERR ]";
+    } else if(containsAny({"restart", "reconnect", "recovery", "recover"})) {
+        levelTag = logc::yellow; levelLabel = "[WARN]";
+    } else if(containsAny({"started", "resumed", "recovered", "ok"})) {
+        levelTag = logc::brightGreen; levelLabel = "[OK  ]";
+    }
+    std::cerr << levelTag << levelLabel << logc::reset
+              << logc::dim << " [" << currentTimestampText() << "]" << logc::reset
+              << logc::brightYellow << "[Device " << session->deviceIndex << "]" << logc::reset;
+    if(!session->serialNumber.empty()) std::cerr << logc::dim << "[SN " << session->serialNumber << "]" << logc::reset;
     std::cerr << " " << message << std::endl;
 }
 

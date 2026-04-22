@@ -91,6 +91,7 @@ add_executable(stm_femto_bolt_viewer
   src/input.cpp
   src/i18n.cpp
   src/app_settings.cpp
+  src/log_util.cpp
 )
 
 target_include_directories(stm_femto_bolt_viewer PRIVATE
