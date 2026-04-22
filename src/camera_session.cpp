@@ -479,15 +479,29 @@ void updateSessionFromFrames(const std::shared_ptr<CameraSession> &session) {
     if(session->disconnected.load()) return;
 
     const auto now = std::chrono::steady_clock::now();
-    if(now - session->lastFrameReceived > std::chrono::seconds(4)) {
-        restartCameraSession(session, "frame timeout");
+    // Give the USB topology worker (which polls device presence) a chance to
+    // notice a physical unplug first — it handles the teardown safely on a
+    // background thread. If after 8s nothing has happened, the device may
+    // just be momentarily stuck; only then does the main thread attempt a
+    // blocking pipeline restart.
+    if(now - session->lastFrameReceived > std::chrono::seconds(8)) {
+        try {
+            restartCameraSession(session, "frame timeout");
+        } catch(...) {
+            logSession(session, "restart threw; will rely on USB worker for recovery");
+        }
         return;
     }
 
-    auto frameSet = takeLatestFrameSet(session);
-    if(!frameSet) return;
-
-    auto alignedFrameset = getAlignedFrameSet(frameSet, session->align);
+    std::shared_ptr<ob::FrameSet> frameSet;
+    std::shared_ptr<ob::FrameSet> alignedFrameset;
+    try {
+        frameSet = takeLatestFrameSet(session);
+        if(!frameSet) return;
+        alignedFrameset = getAlignedFrameSet(frameSet, session->align);
+    } catch(...) {
+        return;
+    }
     if(!alignedFrameset) return;
 
     auto colorFrame = alignedFrameset->colorFrame();

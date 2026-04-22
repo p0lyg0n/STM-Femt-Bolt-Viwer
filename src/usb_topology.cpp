@@ -196,7 +196,9 @@ void startUsbTopologyWorker(ob::Context &context, AppRuntime &runtime) {
                     }
                 }
             }
-            for(int i = 0; i < 15 && !runtime.usbTopologyStop.load(); ++i) {
+            // Poll every ~500ms so a physical unplug is caught before the
+            // main thread's 8s frame-timeout path tries to restart a dead device.
+            for(int i = 0; i < 5 && !runtime.usbTopologyStop.load(); ++i) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
         }

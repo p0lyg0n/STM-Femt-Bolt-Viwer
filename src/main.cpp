@@ -324,8 +324,28 @@ int main() try {
 
     while(!glfwWindowShouldClose(window)) {
         for(const auto &session : sessions) {
-            updateSessionFromFrames(session);
-            pollDeviceTemperature(session);
+            // A camera unplug can cause the Orbbec SDK to throw from inside
+            // frame handling or the timeout-triggered restart path. Swallow
+            // and log rather than letting it tear down the whole main loop —
+            // the USB topology worker will mark the session disconnected and
+            // recover when the device returns.
+            try {
+                updateSessionFromFrames(session);
+            } catch(const ob::Error &e) {
+                std::cerr << logc::yellow << "[WARN]" << logc::reset
+                          << logc::yellow << " updateSessionFromFrames Orbbec error: "
+                          << e.getName() << " " << e.getMessage() << logc::reset << std::endl;
+            } catch(const std::exception &e) {
+                std::cerr << logc::yellow << "[WARN]" << logc::reset
+                          << logc::yellow << " updateSessionFromFrames exception: "
+                          << e.what() << logc::reset << std::endl;
+            } catch(...) {
+                std::cerr << logc::yellow << "[WARN]" << logc::reset
+                          << logc::yellow << " updateSessionFromFrames unknown exception" << logc::reset << std::endl;
+            }
+            try {
+                pollDeviceTemperature(session);
+            } catch(...) {}
         }
 
         glfwPollEvents();
