@@ -210,15 +210,23 @@ void syncSessionDeviceInfo(const std::shared_ptr<CameraSession> &session, const 
 void attachSessionDevice(const std::shared_ptr<CameraSession> &session, const std::shared_ptr<ob::Device> &device) {
     if(!session || !device) return;
 
-    // Stop any lingering pipeline outside the lock so we don't freeze the
-    // main render thread if stop() blocks on the old device. The old shared_ptr
-    // is kept alive in a local until the stop completes.
+    // Stop any lingering pipeline outside the lock AND asynchronously so we
+    // don't freeze this thread if stop() blocks on the old (now unreachable)
+    // device — common during a port switch where stop() may wait many seconds
+    // for a USB timeout that never comes. We detach a thread that owns the
+    // shared_ptr; it runs stop() and releases the pipeline when done.
     std::shared_ptr<ob::Pipeline> oldPipelineToStop;
     {
         std::lock_guard<std::mutex> guard(session->latestFrameMutex);
         oldPipelineToStop = std::move(session->pipeline);
     }
-    try { if(oldPipelineToStop) oldPipelineToStop->stop(); } catch(...) {}
+    if(oldPipelineToStop) {
+        std::thread([p = std::move(oldPipelineToStop)]() mutable {
+            try { if(p) p->stop(); } catch(...) {}
+            // p goes out of scope here: destruction of the old pipeline
+            // happens on the detached thread, not on the caller.
+        }).detach();
+    }
 
     auto newPipeline = std::make_shared<ob::Pipeline>(device);
     auto newAlign    = std::make_shared<ob::Align>(OB_STREAM_COLOR);
@@ -281,12 +289,19 @@ void disconnectSession(const std::shared_ptr<CameraSession> &session, const std:
         session->cpuPointPreview.clear();
     }
 
-    // Heavy/blocking stops run outside the lock so the main thread's next
-    // iteration can grab the mutex briefly (only to see disconnected=true
-    // and bail) while these stops are still in progress on this thread.
-    try { if(pipelineToStop) pipelineToStop->stop(); } catch(...) {}
-    try { if(accelToStop)    accelToStop->stop();    } catch(...) {}
-    try { if(gyroToStop)     gyroToStop->stop();     } catch(...) {}
+    // Heavy/blocking stops run on a detached thread so the caller (USB worker
+    // or hotplug callback) never waits on SDK USB timeouts — which can be
+    // many seconds when the device has already moved to a different port or
+    // is fully unplugged. Resources are released when the thread exits.
+    if(pipelineToStop || accelToStop || gyroToStop) {
+        std::thread([p = std::move(pipelineToStop),
+                     a = std::move(accelToStop),
+                     g = std::move(gyroToStop)]() mutable {
+            try { if(p) p->stop(); } catch(...) {}
+            try { if(a) a->stop(); } catch(...) {}
+            try { if(g) g->stop(); } catch(...) {}
+        }).detach();
+    }
 
     if(!wasDisconnected) {
         logSession(session, reason);
@@ -612,11 +627,17 @@ void registerDeviceHotplugHandler(ob::Context &context, AppRuntime &runtime) {
                         for(auto &session : runtime.sessions) {
                             if(!session || session->serialNumber != serial) continue;
                             std::lock_guard<std::mutex> lk(session->lifecycleMutex);
-                            // Re-check under lock: another thread (the USB topology
-                            // worker or a prior callback invocation) may have
-                            // already reattached in the meantime.
-                            if(!session->disconnected.load()) break;
                             if(std::chrono::steady_clock::now() < session->reattachNotBefore) break;
+                            // Port-switch handling:
+                            //   If the session still thinks it's connected, the SDK
+                            //   missed firing a "removed" event for the old port
+                            //   (quick replug). The cached device handle is stale
+                            //   and won't deliver frames. Force a disconnect first
+                            //   so the subsequent attach starts from a clean state.
+                            if(!session->disconnected.load()) {
+                                logSession(session, "added event while still connected — treating as port switch");
+                                disconnectSession(session, "port switch (added without prior removed)");
+                            }
                             try {
                                 attachSessionDevice(session, dev);
                                 session->reconnecting.store(true);
@@ -626,11 +647,11 @@ void registerDeviceHotplugHandler(ob::Context &context, AppRuntime &runtime) {
                             } catch(const std::exception &e) {
                                 logSession(session, std::string("hotplug reattach failed: ") + e.what());
                                 session->disconnected.store(true);
-                                session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+                                session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
                             } catch(...) {
                                 logSession(session, "hotplug reattach failed: unknown");
                                 session->disconnected.store(true);
-                                session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+                                session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
                             }
                             break;
                         }
