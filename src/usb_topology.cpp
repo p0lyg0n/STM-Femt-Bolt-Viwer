@@ -190,16 +190,39 @@ void startUsbTopologyWorker(ob::Context &context, AppRuntime &runtime) {
                                     attachSessionDevice(session, matchedDevice);
                                     session->reconnecting.store(true);
                                     startCameraSession(session);
-                                    // Success: clear the backoff.
-                                    session->reattachNotBefore = std::chrono::steady_clock::time_point::min();
+                                    // ---- Silent-failure detection ----
+                                    // attach + start can return cleanly yet the
+                                    // pipeline never delivers frames — typical after
+                                    // replugging to a different USB port where Windows
+                                    // / Orbbec think the color sub-interface exists
+                                    // but it isn't really usable. FULL_FRAME_REQUIRE
+                                    // then blocks all output. Wait up to 2s for the
+                                    // callback to actually push a frame. If it doesn't,
+                                    // tear the session down and back off longer so we
+                                    // don't spin on pipeline create/destroy.
+                                    const auto attachTime = std::chrono::steady_clock::now();
+                                    const auto waitEnd    = attachTime + std::chrono::seconds(2);
+                                    while(std::chrono::steady_clock::now() < waitEnd &&
+                                          !runtime.usbTopologyStop.load()) {
+                                        if(session->lastFrameReceived > attachTime) break;
+                                        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                                    }
+                                    if(session->lastFrameReceived <= attachTime) {
+                                        logSession(session, "attached but no frames in 2s — device likely partially enumerated; backing off");
+                                        disconnectSession(session, "no frames after attach");
+                                        session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+                                    } else {
+                                        // Real success: clear the backoff.
+                                        session->reattachNotBefore = std::chrono::steady_clock::time_point::min();
+                                    }
                                 } catch(const std::exception &e) {
                                     logSession(session, std::string("restart failed after USB return: ") + e.what());
                                     session->disconnected.store(true);
-                                    session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+                                    session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
                                 } catch(...) {
                                     logSession(session, "restart failed after USB return: unknown error");
                                     session->disconnected.store(true);
-                                    session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+                                    session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
                                 }
                             }
                         } else if(!session->disconnected.load()) {

@@ -654,9 +654,12 @@ void updateSessionFromFrames(const std::shared_ptr<CameraSession> &session) {
     // for the SDK's USB timeout (3–5s) and, worse, can spin-retry on a
     // partially-enumerated device — logging the SDK warning
     // "Device Component 'color sensor' not found!" indefinitely.
-    if(now - session->lastFrameReceived > std::chrono::seconds(8)) {
+    // 5 seconds tolerates normal post-attach startup delay while catching
+    // silent-failure attaches fast (e.g. replug to a different USB port where
+    // start() returns cleanly but no frames ever flow).
+    if(now - session->lastFrameReceived > std::chrono::seconds(5)) {
         if(!session->disconnected.exchange(true)) {
-            logSession(session, "no frames for 8s — handing recovery to USB worker");
+            logSession(session, "no frames for 5s — handing recovery to USB worker");
         }
         return;
     }
