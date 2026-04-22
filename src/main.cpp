@@ -13,6 +13,7 @@
 #include <imgui_impl_opengl2.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <exception>
 #include <fstream>
 #include <iostream>
@@ -385,6 +386,18 @@ int main() try {
         }
     }
 
+    // --- Shutdown ---
+    // The window has been closed (or q/ESC pressed). Persist user settings
+    // FIRST so they are never lost, then exit fast.
+    //
+    // Why the abrupt exit: ob::Pipeline destruction calls the SDK's blocking
+    // stop() which waits for the USB subsystem to acknowledge. If a camera
+    // is in a bad USB state at exit time this can stall the process for
+    // several seconds, making the app look frozen even though the window is
+    // gone. For a user-driven UI close we don't need a graceful Orbbec
+    // teardown — the OS will reclaim all handles/threads when the process
+    // exits. We do still stop the topology worker so it isn't left scanning
+    // after we've freed shared state.
     {
         app_settings::AppSettings saved;
         saved.lang      = i18n::getLang();
@@ -395,27 +408,11 @@ int main() try {
         saved.vsync     = runtime.vsync;
         app_settings::save(saved);
     }
-
-    ImGui_ImplOpenGL2_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
-
     stopUsbTopologyWorker(runtime);
-    for(const auto &session : sessions) {
-        glDeleteTextures(1, &session->texRgb);
-        glDeleteTextures(1, &session->texDepth);
-        glDeleteTextures(1, &session->texIr);
-        glDeleteTextures(1, &session->texPointCpu);
-    }
-    glfwDestroyWindow(window);
-    glfwTerminate();
-    for(const auto &session : sessions) {
-        try {
-            if(session && session->pipeline) session->pipeline->stop();
-        } catch(...) {
-        }
-    }
-    return 0;
+
+    std::cout.flush();
+    std::cerr.flush();
+    std::_Exit(0);
 } catch(const ob::Error &e) {
     std::cerr << logc::brightRed << logc::bold << "[ERR ]" << logc::reset
               << logc::red << " Orbbec error: function=" << e.getName() << " args=" << e.getArgs()
