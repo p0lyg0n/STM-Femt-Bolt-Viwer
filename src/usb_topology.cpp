@@ -176,6 +176,10 @@ void startUsbTopologyWorker(ob::Context &context, AppRuntime &runtime) {
                 for(const auto &session : runtime.sessions) {
                     if(!session || session->serialNumber.empty()) continue;
                     auto matchedDevice = findDeviceBySerial(deviceList, session->serialNumber);
+                    // Take the session lifecycle lock so we never race with the
+                    // Orbbec hotplug callback on the same session (double
+                    // pipeline->stop, double attach, etc.).
+                    std::lock_guard<std::mutex> lk(session->lifecycleMutex);
                     if(matchedDevice) {
                         if(session->disconnected.load()) {
                             logSession(session, "USB device detected again; reattaching");

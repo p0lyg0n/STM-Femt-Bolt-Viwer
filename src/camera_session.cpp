@@ -352,7 +352,14 @@ void startCameraSession(const std::shared_ptr<CameraSession> &session) {
 }
 
 void restartCameraSession(const std::shared_ptr<CameraSession> &session, const char *reason) {
-    if(!session || !session->pipeline) return;
+    if(!session) return;
+    // Serialize with hotplug / USB-topology worker operations. If we can't get
+    // the lock immediately, another thread is already in the middle of an
+    // attach/disconnect for this session — skip this restart attempt and let
+    // that work complete.
+    std::unique_lock<std::mutex> lk(session->lifecycleMutex, std::try_to_lock);
+    if(!lk.owns_lock()) return;
+    if(!session->pipeline) return;
     if(session->disconnected.load()) {
         return;
     }
@@ -478,44 +485,13 @@ void registerDeviceHotplugHandler(ob::Context &context, AppRuntime &runtime) {
     try {
         context.setDeviceChangedCallback([&runtime](std::shared_ptr<ob::DeviceList> removed,
                                                     std::shared_ptr<ob::DeviceList> added) {
-            // Reattach any session whose serial matches a newly-added device.
-            // startCameraSession is synchronous; running it on the SDK thread is
-            // fine because the work is bounded (profile query + pipeline start)
-            // and we don't touch UI state here.
-            if(added) {
-                try {
-                    const uint32_t n = deviceListCount(added);
-                    for(uint32_t i = 0; i < n; ++i) {
-                        auto dev = added->getDevice(i);
-                        if(!dev) continue;
-                        auto info = dev->getDeviceInfo();
-                        if(!info) continue;
-                        const auto serialCStr = deviceSerialText(info);
-                        std::string serial = serialCStr ? serialCStr : "";
-                        if(serial.empty()) continue;
-                        for(auto &session : runtime.sessions) {
-                            if(!session || session->serialNumber != serial) continue;
-                            if(!session->disconnected.load()) continue;
-                            try {
-                                attachSessionDevice(session, dev);
-                                session->reconnecting.store(true);
-                                startCameraSession(session);
-                                logSession(session, "recovered via device-changed callback");
-                            } catch(const std::exception &e) {
-                                logSession(session, std::string("hotplug reattach failed: ") + e.what());
-                                session->disconnected.store(true);
-                            } catch(...) {
-                                logSession(session, "hotplug reattach failed: unknown");
-                                session->disconnected.store(true);
-                            }
-                            break;
-                        }
-                    }
-                } catch(...) {}
-            }
-            // Teardown any session whose serial appeared in removedList. The
-            // USB topology worker would also notice this within 500ms but the
-            // callback reacts immediately.
+            // IMPORTANT: process REMOVED first, then ADDED.
+            // On a quick replug the SDK may fire the callback once with both the
+            // old (invalid) handle and the new handle of the same serial. If we
+            // did added first and removed second, the removed pass would tear
+            // down the session we just reattached. Doing removed first leaves
+            // the session cleanly disconnected, so the subsequent added pass
+            // simply reattaches to the new handle.
             if(removed) {
                 try {
                     const uint32_t n = deviceListCount(removed);
@@ -529,8 +505,48 @@ void registerDeviceHotplugHandler(ob::Context &context, AppRuntime &runtime) {
                         if(serial.empty()) continue;
                         for(auto &session : runtime.sessions) {
                             if(!session || session->serialNumber != serial) continue;
-                            if(session->disconnected.load()) continue;
+                            // Serialize with any in-flight attach/restart on the
+                            // other thread (USB topology worker). The guarded
+                            // disconnected flag check prevents redundant work.
+                            std::lock_guard<std::mutex> lk(session->lifecycleMutex);
+                            if(session->disconnected.load()) break;
                             disconnectSession(session, "device removed (hotplug callback)");
+                            break;
+                        }
+                    }
+                } catch(...) {}
+            }
+            // Reattach any session whose serial matches a newly-added device.
+            if(added) {
+                try {
+                    const uint32_t n = deviceListCount(added);
+                    for(uint32_t i = 0; i < n; ++i) {
+                        auto dev = added->getDevice(i);
+                        if(!dev) continue;
+                        auto info = dev->getDeviceInfo();
+                        if(!info) continue;
+                        const auto serialCStr = deviceSerialText(info);
+                        std::string serial = serialCStr ? serialCStr : "";
+                        if(serial.empty()) continue;
+                        for(auto &session : runtime.sessions) {
+                            if(!session || session->serialNumber != serial) continue;
+                            std::lock_guard<std::mutex> lk(session->lifecycleMutex);
+                            // Re-check under lock: another thread (the USB topology
+                            // worker or a prior callback invocation) may have
+                            // already reattached in the meantime.
+                            if(!session->disconnected.load()) break;
+                            try {
+                                attachSessionDevice(session, dev);
+                                session->reconnecting.store(true);
+                                startCameraSession(session);
+                                logSession(session, "recovered via device-changed callback");
+                            } catch(const std::exception &e) {
+                                logSession(session, std::string("hotplug reattach failed: ") + e.what());
+                                session->disconnected.store(true);
+                            } catch(...) {
+                                logSession(session, "hotplug reattach failed: unknown");
+                                session->disconnected.store(true);
+                            }
                             break;
                         }
                     }

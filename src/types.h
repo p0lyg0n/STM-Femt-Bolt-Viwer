@@ -177,6 +177,10 @@ struct CameraSession {
 
     CameraViewState viewState;
     StreamSettings streamSettings;
+    // Serializes attach / disconnect / restart so that the hotplug callback
+    // and the USB topology polling thread don't race each other on the same
+    // session (double pipeline->stop, double attach, etc.).
+    std::mutex lifecycleMutex;
 
     GLuint texRgb = 0;
     GLuint texDepth = 0;
