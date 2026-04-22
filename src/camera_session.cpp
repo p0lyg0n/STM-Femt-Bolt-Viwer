@@ -209,21 +209,33 @@ void syncSessionDeviceInfo(const std::shared_ptr<CameraSession> &session, const 
 
 void attachSessionDevice(const std::shared_ptr<CameraSession> &session, const std::shared_ptr<ob::Device> &device) {
     if(!session || !device) return;
-    try {
-        if(session->pipeline) {
-            session->pipeline->stop();
-        }
-    } catch(...) {
+
+    // Stop any lingering pipeline outside the lock so we don't freeze the
+    // main render thread if stop() blocks on the old device. The old shared_ptr
+    // is kept alive in a local until the stop completes.
+    std::shared_ptr<ob::Pipeline> oldPipelineToStop;
+    {
+        std::lock_guard<std::mutex> guard(session->latestFrameMutex);
+        oldPipelineToStop = std::move(session->pipeline);
+    }
+    try { if(oldPipelineToStop) oldPipelineToStop->stop(); } catch(...) {}
+
+    auto newPipeline = std::make_shared<ob::Pipeline>(device);
+    auto newAlign    = std::make_shared<ob::Align>(OB_STREAM_COLOR);
+
+    {
+        std::lock_guard<std::mutex> guard(session->latestFrameMutex);
+        session->device   = device;
+        session->pipeline = std::move(newPipeline);
+        session->align    = std::move(newAlign);
+        session->latestFrameSet.reset();
     }
 
-    session->device = device;
-    session->pipeline = std::make_shared<ob::Pipeline>(device);
-    session->align = std::make_shared<ob::Align>(OB_STREAM_COLOR);
     session->cameraParamReady = false;
     session->healthy.store(false);
     session->reconnecting.store(false);
     session->disconnected.store(false);
-    session->lastFrameReceived = std::chrono::steady_clock::now();
+    session->lastFrameReceived  = std::chrono::steady_clock::now();
     session->lastRestartAttempt = std::chrono::steady_clock::now() - std::chrono::seconds(10);
     syncSessionDeviceInfo(session, device);
 }
@@ -247,26 +259,34 @@ void disconnectSession(const std::shared_ptr<CameraSession> &session, const std:
     session->healthy.store(false);
     session->cameraParamReady = false;
     session->latestPoints = 0;
-    session->viewState.mesh = GpuMesh{};
-    session->rgb.clear();
-    session->depthPseudo.clear();
-    session->cpuPointPreview.clear();
 
-    try {
-        if(session->pipeline) {
-            session->pipeline->stop();
-        }
-    } catch(...) {
-    }
-    stopImuSensors(session);
-    session->device.reset();
-    session->pipeline.reset();
-    session->align.reset();
-
+    // Atomically swap out the session's shared_ptrs so the main render thread
+    // cannot observe a half-reset state. Keep local refs of pipeline and IMU
+    // sensors so we can do the possibly-blocking stop() calls AFTER releasing
+    // the lock — the UI must never freeze on SDK USB timeout (3–5 s).
+    std::shared_ptr<ob::Pipeline> pipelineToStop;
+    std::shared_ptr<ob::Sensor>   accelToStop;
+    std::shared_ptr<ob::Sensor>   gyroToStop;
     {
         std::lock_guard<std::mutex> guard(session->latestFrameMutex);
+        pipelineToStop = std::move(session->pipeline);
+        accelToStop    = std::move(session->accelSensor);
+        gyroToStop     = std::move(session->gyroSensor);
+        session->align.reset();
+        session->device.reset();
         session->latestFrameSet.reset();
+        session->viewState.mesh = GpuMesh{};
+        session->rgb.clear();
+        session->depthPseudo.clear();
+        session->cpuPointPreview.clear();
     }
+
+    // Heavy/blocking stops run outside the lock so the main thread's next
+    // iteration can grab the mutex briefly (only to see disconnected=true
+    // and bail) while these stops are still in progress on this thread.
+    try { if(pipelineToStop) pipelineToStop->stop(); } catch(...) {}
+    try { if(accelToStop)    accelToStop->stop();    } catch(...) {}
+    try { if(gyroToStop)     gyroToStop->stop();     } catch(...) {}
 
     if(!wasDisconnected) {
         logSession(session, reason);
@@ -282,13 +302,17 @@ void startImuSensors(const std::shared_ptr<CameraSession> &session) {
             auto profile = profiles->getAccelStreamProfile(OB_ACCEL_FS_4g, OB_SAMPLE_RATE_100_HZ);
             std::weak_ptr<CameraSession> weak = session;
             sensor->start(profile, [weak](std::shared_ptr<ob::Frame> frame) {
-                auto locked = weak.lock();
-                if(!locked) return;
-                auto af = frame->as<ob::AccelFrame>();
-                OBAccelValue v = af->value();
-                std::lock_guard<std::mutex> g(locked->imuMutex);
-                locked->lastAccel = v;
-                locked->imuReady = true;
+                try {
+                    auto locked = weak.lock();
+                    if(!locked || locked->disconnected.load()) return;
+                    if(!frame) return;
+                    auto af = frame->as<ob::AccelFrame>();
+                    if(!af) return;
+                    OBAccelValue v = af->value();
+                    std::lock_guard<std::mutex> g(locked->imuMutex);
+                    locked->lastAccel = v;
+                    locked->imuReady = true;
+                } catch(...) {}
             });
             session->accelSensor = sensor;
         }
@@ -300,12 +324,16 @@ void startImuSensors(const std::shared_ptr<CameraSession> &session) {
             auto profile = profiles->getGyroStreamProfile(OB_GYRO_FS_250dps, OB_SAMPLE_RATE_100_HZ);
             std::weak_ptr<CameraSession> weak = session;
             sensor->start(profile, [weak](std::shared_ptr<ob::Frame> frame) {
-                auto locked = weak.lock();
-                if(!locked) return;
-                auto gf = frame->as<ob::GyroFrame>();
-                OBGyroValue v = gf->value();
-                std::lock_guard<std::mutex> g(locked->imuMutex);
-                locked->lastGyro = v;
+                try {
+                    auto locked = weak.lock();
+                    if(!locked || locked->disconnected.load()) return;
+                    if(!frame) return;
+                    auto gf = frame->as<ob::GyroFrame>();
+                    if(!gf) return;
+                    OBGyroValue v = gf->value();
+                    std::lock_guard<std::mutex> g(locked->imuMutex);
+                    locked->lastGyro = v;
+                } catch(...) {}
             });
             session->gyroSensor = sensor;
         }
@@ -335,8 +363,11 @@ void startCameraSession(const std::shared_ptr<CameraSession> &session) {
     session->pipeline->enableFrameSync();
     std::weak_ptr<CameraSession> weakSession = session;
     session->pipeline->start(config, [weakSession](std::shared_ptr<ob::FrameSet> frameSet) {
-        if(auto locked = weakSession.lock()) {
+        try {
+            auto locked = weakSession.lock();
+            if(!locked || locked->disconnected.load()) return;
             std::lock_guard<std::mutex> guard(locked->latestFrameMutex);
+            if(locked->disconnected.load()) return;
             locked->latestFrameSet = std::move(frameSet);
             locked->lastFrameReceived = std::chrono::steady_clock::now();
             const bool wasRecovering = locked->reconnecting.exchange(false);
@@ -344,7 +375,7 @@ void startCameraSession(const std::shared_ptr<CameraSession> &session) {
             if(wasRecovering) {
                 logSession(locked, "recovered and resumed frame streaming");
             }
-        }
+        } catch(...) {}
     });
     session->healthy.store(false);
     logSession(session, "pipeline started");
@@ -376,19 +407,30 @@ void restartCameraSession(const std::shared_ptr<CameraSession> &session, const c
     msg << ", restart count=" << session->restartCount.load();
     logSession(session, msg.str());
 
-    try {
-        session->pipeline->stop();
-    } catch(...) {
-    }
-
+    // Swap the pipeline out under the resource lock so the main thread sees a
+    // consistent (pipeline/align) pair. Then stop the old one without holding
+    // any lock — it may block on a dead USB device for several seconds.
+    std::shared_ptr<ob::Pipeline> oldPipeline;
     {
         std::lock_guard<std::mutex> guard(session->latestFrameMutex);
+        oldPipeline = std::move(session->pipeline);
         session->latestFrameSet.reset();
     }
+    try { if(oldPipeline) oldPipeline->stop(); } catch(...) {}
 
     try {
-        startCameraSession(session);
-        session->lastFrameReceived = std::chrono::steady_clock::now();
+        // Re-create the pipeline from the still-live device handle.
+        if(session->device) {
+            auto newPipeline = std::make_shared<ob::Pipeline>(session->device);
+            {
+                std::lock_guard<std::mutex> guard(session->latestFrameMutex);
+                session->pipeline = std::move(newPipeline);
+            }
+            startCameraSession(session);
+            session->lastFrameReceived = std::chrono::steady_clock::now();
+        } else {
+            logSession(session, "restart: no device handle; waiting for reattach");
+        }
     } catch(const std::exception &e) {
         logSession(session, std::string("restart failed: ") + e.what());
     } catch(...) {
@@ -577,12 +619,26 @@ void updateSessionFromFrames(const std::shared_ptr<CameraSession> &session) {
         return;
     }
 
+    // Take a snapshot of the per-session shared_ptrs that another thread
+    // (hotplug callback / USB topology worker) may be resetting right now.
+    // Reading `session->pipeline` / `session->align` directly is UB when
+    // another thread is writing to them — grab local strong refs under the
+    // same mutex those writers use, then operate on the local copies. Even if
+    // the writer resets session->pipeline a nanosecond later, our locals keep
+    // the objects alive for the duration of this frame.
+    std::shared_ptr<ob::Align> align;
     std::shared_ptr<ob::FrameSet> frameSet;
+    {
+        std::lock_guard<std::mutex> guard(session->latestFrameMutex);
+        if(session->disconnected.load()) return;
+        align    = session->align;
+        frameSet = std::move(session->latestFrameSet);
+    }
+    if(!frameSet) return;
+
     std::shared_ptr<ob::FrameSet> alignedFrameset;
     try {
-        frameSet = takeLatestFrameSet(session);
-        if(!frameSet) return;
-        alignedFrameset = getAlignedFrameSet(frameSet, session->align);
+        alignedFrameset = getAlignedFrameSet(frameSet, align);
     } catch(...) {
         return;
     }
