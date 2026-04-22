@@ -200,6 +200,9 @@ const char *kStrings[(int)S::_Count][3] = {
     /* DevDepthStopped      */ {u8"DEPTH 停止中",          u8"DEPTH stopped",            u8"DEPTH 정지"},
     /* DevPointStopped      */ {u8"POINT 停止中",          u8"POINT stopped",            u8"POINT 정지"},
     /* DevWaitingReconnect  */ {u8"再接続を待機中",        u8"Waiting reconnect",        u8"재연결 대기 중"},
+    /* DevRecoverHint       */ {u8"戻らない場合は [アプリを再起動] で復旧してください",
+                                u8"If it doesn't return, click [Restart App] to recover",
+                                u8"복구되지 않으면 [앱 재시작] 버튼을 눌러주세요"},
 };
 
 } // namespace

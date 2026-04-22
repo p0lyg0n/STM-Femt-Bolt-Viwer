@@ -282,19 +282,24 @@ void renderSessionSlot(
             drawFilledRect(vpRgb, 0.10f, 0.10f, 0.10f, 0.58f);
             drawFilledRect(vpDepth, 0.10f, 0.10f, 0.10f, 0.58f);
             drawFilledRect(vpPoint, 0.10f, 0.10f, 0.10f, 0.58f);
-            const auto discMsg = [&](const Viewport &vp, const char *l1, const char *l2, const char *l3) {
+            const auto discMsg = [&](const Viewport &vp, const char *l1, const char *l2, const char *l3, const char *l4) {
                 const float cx = (float)vp.x + (float)vp.w * 0.5f;
                 const float cy = (float)(runtime.framebufferH - vp.y) - (float)vp.h * 0.5f;
                 auto sz1 = fontN->CalcTextSizeA(23.0f, FLT_MAX, 0.0f, l1);
                 auto sz2 = fontS->CalcTextSizeA(20.0f, FLT_MAX, 0.0f, l2);
                 auto sz3 = fontS->CalcTextSizeA(20.0f, FLT_MAX, 0.0f, l3);
-                dl->AddText(fontN, 23.0f, {cx - sz1.x * 0.5f, cy - 36.0f}, IM_COL32(240, 240, 240, 255), l1);
-                dl->AddText(fontS, 20.0f, {cx - sz2.x * 0.5f, cy - 4.0f},  IM_COL32(200, 200, 200, 255), l2);
-                dl->AddText(fontS, 20.0f, {cx - sz3.x * 0.5f, cy + 16.0f}, IM_COL32(175, 175, 175, 255), l3);
+                dl->AddText(fontN, 23.0f, {cx - sz1.x * 0.5f, cy - 48.0f}, IM_COL32(240, 240, 240, 255), l1);
+                dl->AddText(fontS, 20.0f, {cx - sz2.x * 0.5f, cy - 16.0f}, IM_COL32(200, 200, 200, 255), l2);
+                dl->AddText(fontS, 20.0f, {cx - sz3.x * 0.5f, cy + 4.0f},  IM_COL32(175, 175, 175, 255), l3);
+                if(l4 && l4[0]) {
+                    auto sz4 = fontS->CalcTextSizeA(18.0f, FLT_MAX, 0.0f, l4);
+                    dl->AddText(fontS, 18.0f, {cx - sz4.x * 0.5f, cy + 30.0f}, IM_COL32(255, 200, 120, 255), l4);
+                }
             };
-            discMsg(vpRgb,   i18n::L(i18n::S::DevDisconnected), i18n::L(i18n::S::DevCameraUnplugged), i18n::L(i18n::S::DevReconnectsAuto));
-            discMsg(vpDepth, i18n::L(i18n::S::DevDisconnected), i18n::L(i18n::S::DevDepthStopped),  i18n::L(i18n::S::DevWaitingReconnect));
-            discMsg(vpPoint, i18n::L(i18n::S::DevDisconnected), i18n::L(i18n::S::DevPointStopped),  i18n::L(i18n::S::DevWaitingReconnect));
+            const char *recoverHint = i18n::L(i18n::S::DevRecoverHint);
+            discMsg(vpRgb,   i18n::L(i18n::S::DevDisconnected), i18n::L(i18n::S::DevCameraUnplugged), i18n::L(i18n::S::DevReconnectsAuto),   recoverHint);
+            discMsg(vpDepth, i18n::L(i18n::S::DevDisconnected), i18n::L(i18n::S::DevDepthStopped),    i18n::L(i18n::S::DevWaitingReconnect), nullptr);
+            discMsg(vpPoint, i18n::L(i18n::S::DevDisconnected), i18n::L(i18n::S::DevPointStopped),    i18n::L(i18n::S::DevWaitingReconnect), nullptr);
         }
     }
 }

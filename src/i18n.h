@@ -91,6 +91,7 @@ enum class S {
     DevDepthStopped,
     DevPointStopped,
     DevWaitingReconnect,
+    DevRecoverHint,
 
     _Count
 };

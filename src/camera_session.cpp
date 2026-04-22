@@ -633,31 +633,23 @@ void registerDeviceHotplugHandler(ob::Context &context, AppRuntime &runtime) {
                         for(auto &session : runtime.sessions) {
                             if(!session || session->serialNumber != serial) continue;
                             std::lock_guard<std::mutex> lk(session->lifecycleMutex);
+                            // Only act on "added" events when the session is currently
+                            // disconnected. Duplicate added events for an already-
+                            // connected session are ignored — aggressive
+                            // "port-switch" auto-recovery caused more harm than it
+                            // fixed. For the port-switch scenario, the main thread's
+                            // 5s frame-timeout will mark the session disconnected if
+                            // frames actually stop; from there we go through the
+                            // normal reattach path.
+                            if(!session->disconnected.load()) break;
                             if(std::chrono::steady_clock::now() < session->reattachNotBefore) break;
-                            // Port-switch handling:
-                            //   If the session still thinks it's connected, the SDK
-                            //   missed firing a "removed" event for the old port
-                            //   (quick replug). The cached device handle is stale
-                            //   and won't deliver frames. Force a disconnect first
-                            //   so the subsequent attach starts from a clean state.
-                            if(!session->disconnected.load()) {
-                                logSession(session, "added event while still connected — treating as port switch");
-                                disconnectSession(session, "port switch (added without prior removed)");
-                            }
                             session->attachInProgress.store(true);
                             try {
                                 attachSessionDevice(session, dev);
                                 session->reconnecting.store(true);
                                 startCameraSession(session);
                                 logSession(session, "recovered via device-changed callback");
-                                // Stability window: for the next 5s, ignore any
-                                // further "added" events for this session. The
-                                // SDK can fire duplicate added callbacks right
-                                // after a real attach (e.g. during USB re-enum),
-                                // and our port-switch branch above would treat
-                                // that as a reason to disconnect the session we
-                                // just brought up.
-                                session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+                                session->reattachNotBefore = std::chrono::steady_clock::time_point::min();
                                 session->attachInProgress.store(false);
                             } catch(const std::exception &e) {
                                 session->attachInProgress.store(false);
