@@ -313,6 +313,7 @@ int main() try {
     glfwSetCursorPosCallback(window, onCursorPos);
     glfwSetScrollCallback(window, onScroll);
 
+    registerDeviceHotplugHandler(context, runtime);
     startUsbTopologyWorker(context, runtime);
 
     std::cout << logc::cyan << "[INFO]" << logc::reset

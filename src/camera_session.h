@@ -89,3 +89,14 @@ void tryFetchCameraParam(const std::shared_ptr<ob::Pipeline> &pipeline, bool &ca
 // ---------------------------------------------------------------------------
 
 void updateSessionFromFrames(const std::shared_ptr<CameraSession> &session);
+
+// ---------------------------------------------------------------------------
+// Hotplug handler
+// ---------------------------------------------------------------------------
+
+// Installs ob::Context::setDeviceChangedCallback so that physical unplug /
+// replug is reacted to immediately (instead of waiting for the USB topology
+// polling loop to notice). Complements the poll-based detection — not a
+// replacement, since polling also re-queries topology state used for the
+// "USB TOPOLOGY" sidebar panel.
+void registerDeviceHotplugHandler(ob::Context &context, AppRuntime &runtime);
