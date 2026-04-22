@@ -181,6 +181,10 @@ struct CameraSession {
     // and the USB topology polling thread don't race each other on the same
     // session (double pipeline->stop, double attach, etc.).
     std::mutex lifecycleMutex;
+    // After a failed reattach (typically because USB re-enumeration has not
+    // finished yet), back off a bit before the next attempt so we don't
+    // thrash the SDK with pipeline create/destroy cycles every 500ms.
+    std::chrono::steady_clock::time_point reattachNotBefore = std::chrono::steady_clock::time_point::min();
 
     GLuint texRgb = 0;
     GLuint texDepth = 0;

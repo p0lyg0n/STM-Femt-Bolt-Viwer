@@ -175,28 +175,39 @@ void startUsbTopologyWorker(ob::Context &context, AppRuntime &runtime) {
             if(deviceList) {
                 for(const auto &session : runtime.sessions) {
                     if(!session || session->serialNumber.empty()) continue;
-                    auto matchedDevice = findDeviceBySerial(deviceList, session->serialNumber);
-                    // Take the session lifecycle lock so we never race with the
-                    // Orbbec hotplug callback on the same session (double
-                    // pipeline->stop, double attach, etc.).
-                    std::lock_guard<std::mutex> lk(session->lifecycleMutex);
-                    if(matchedDevice) {
-                        if(session->disconnected.load()) {
-                            logSession(session, "USB device detected again; reattaching");
-                            attachSessionDevice(session, matchedDevice);
-                            session->reconnecting.store(true);
-                            try {
-                                startCameraSession(session);
-                            } catch(const std::exception &e) {
-                                logSession(session, std::string("restart failed after USB return: ") + e.what());
-                                session->disconnected.store(true);
-                            } catch(...) {
-                                logSession(session, "restart failed after USB return: unknown error");
-                                session->disconnected.store(true);
+                    try {
+                        auto matchedDevice = findDeviceBySerial(deviceList, session->serialNumber);
+                        // Take the session lifecycle lock so we never race with the
+                        // Orbbec hotplug callback on the same session (double
+                        // pipeline->stop, double attach, etc.).
+                        std::lock_guard<std::mutex> lk(session->lifecycleMutex);
+                        if(matchedDevice) {
+                            if(session->disconnected.load()) {
+                                const auto now = std::chrono::steady_clock::now();
+                                if(now < session->reattachNotBefore) continue;  // still backing off
+                                logSession(session, "USB device detected again; reattaching");
+                                try {
+                                    attachSessionDevice(session, matchedDevice);
+                                    session->reconnecting.store(true);
+                                    startCameraSession(session);
+                                    // Success: clear the backoff.
+                                    session->reattachNotBefore = std::chrono::steady_clock::time_point::min();
+                                } catch(const std::exception &e) {
+                                    logSession(session, std::string("restart failed after USB return: ") + e.what());
+                                    session->disconnected.store(true);
+                                    session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+                                } catch(...) {
+                                    logSession(session, "restart failed after USB return: unknown error");
+                                    session->disconnected.store(true);
+                                    session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+                                }
                             }
+                        } else if(!session->disconnected.load()) {
+                            disconnectSession(session, "USB device removed; marking session disconnected");
                         }
-                    } else if(!session->disconnected.load()) {
-                        disconnectSession(session, "USB device removed; marking session disconnected");
+                    } catch(...) {
+                        // Never let a per-session exception terminate the
+                        // topology worker thread.
                     }
                 }
             }

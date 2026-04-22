@@ -357,8 +357,38 @@ void pollDeviceTemperature(const std::shared_ptr<CameraSession> &session) {
     } catch(...) {}
 }
 
+namespace {
+// Verifies the given device currently exposes both Color and Depth sensors.
+// Immediately after a hotplug replug, USB re-enumeration can be incomplete:
+// the device handle looks valid but its color-sensor interface is still being
+// brought up. Starting a pipeline in that window yields the SDK warning
+// "Device Component 'color sensor' not found!" and no framesets are ever
+// delivered (we request FULL_FRAME_REQUIRE aggregation). Throwing here causes
+// the caller's retry loop to wait and try again once USB has settled.
+bool deviceHasColorAndDepth(const std::shared_ptr<ob::Device> &device) {
+    if(!device) return false;
+    try {
+        auto list = device->getSensorList();
+        if(!list) return false;
+        const uint32_t n = list->getCount();
+        bool hasColor = false, hasDepth = false;
+        for(uint32_t i = 0; i < n; ++i) {
+            const auto t = list->getSensorType(i);
+            if(t == OB_SENSOR_COLOR) hasColor = true;
+            else if(t == OB_SENSOR_DEPTH) hasDepth = true;
+        }
+        return hasColor && hasDepth;
+    } catch(...) {
+        return false;
+    }
+}
+} // namespace
+
 void startCameraSession(const std::shared_ptr<CameraSession> &session) {
     if(!session || !session->pipeline) return;
+    if(!deviceHasColorAndDepth(session->device)) {
+        throw std::runtime_error("device not fully enumerated (color/depth sensor missing)");
+    }
     auto config = createStreamConfig(session->streamSettings);
     session->pipeline->enableFrameSync();
     std::weak_ptr<CameraSession> weakSession = session;
@@ -577,17 +607,21 @@ void registerDeviceHotplugHandler(ob::Context &context, AppRuntime &runtime) {
                             // worker or a prior callback invocation) may have
                             // already reattached in the meantime.
                             if(!session->disconnected.load()) break;
+                            if(std::chrono::steady_clock::now() < session->reattachNotBefore) break;
                             try {
                                 attachSessionDevice(session, dev);
                                 session->reconnecting.store(true);
                                 startCameraSession(session);
                                 logSession(session, "recovered via device-changed callback");
+                                session->reattachNotBefore = std::chrono::steady_clock::time_point::min();
                             } catch(const std::exception &e) {
                                 logSession(session, std::string("hotplug reattach failed: ") + e.what());
                                 session->disconnected.store(true);
+                                session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
                             } catch(...) {
                                 logSession(session, "hotplug reattach failed: unknown");
                                 session->disconnected.store(true);
+                                session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
                             }
                             break;
                         }
@@ -605,16 +639,15 @@ void updateSessionFromFrames(const std::shared_ptr<CameraSession> &session) {
     if(session->disconnected.load()) return;
 
     const auto now = std::chrono::steady_clock::now();
-    // Give the USB topology worker (which polls device presence) a chance to
-    // notice a physical unplug first — it handles the teardown safely on a
-    // background thread. If after 8s nothing has happened, the device may
-    // just be momentarily stuck; only then does the main thread attempt a
-    // blocking pipeline restart.
+    // If no frame has arrived for a while, mark the session disconnected and
+    // let the USB topology worker (or the hotplug callback) rebuild it on a
+    // background thread. Doing the rebuild on the main thread blocks the UI
+    // for the SDK's USB timeout (3–5s) and, worse, can spin-retry on a
+    // partially-enumerated device — logging the SDK warning
+    // "Device Component 'color sensor' not found!" indefinitely.
     if(now - session->lastFrameReceived > std::chrono::seconds(8)) {
-        try {
-            restartCameraSession(session, "frame timeout");
-        } catch(...) {
-            logSession(session, "restart threw; will rely on USB worker for recovery");
+        if(!session->disconnected.exchange(true)) {
+            logSession(session, "no frames for 8s — handing recovery to USB worker");
         }
         return;
     }
