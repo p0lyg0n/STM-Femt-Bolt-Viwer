@@ -186,6 +186,7 @@ void startUsbTopologyWorker(ob::Context &context, AppRuntime &runtime) {
                                 const auto now = std::chrono::steady_clock::now();
                                 if(now < session->reattachNotBefore) continue;  // still backing off
                                 logSession(session, "USB device detected again; reattaching");
+                                session->attachInProgress.store(true);
                                 try {
                                     attachSessionDevice(session, matchedDevice);
                                     session->reconnecting.store(true);
@@ -215,11 +216,14 @@ void startUsbTopologyWorker(ob::Context &context, AppRuntime &runtime) {
                                         // Real success: clear the backoff.
                                         session->reattachNotBefore = std::chrono::steady_clock::time_point::min();
                                     }
+                                    session->attachInProgress.store(false);
                                 } catch(const std::exception &e) {
+                                    session->attachInProgress.store(false);
                                     logSession(session, std::string("restart failed after USB return: ") + e.what());
                                     session->disconnected.store(true);
                                     session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
                                 } catch(...) {
+                                    session->attachInProgress.store(false);
                                     logSession(session, "restart failed after USB return: unknown error");
                                     session->disconnected.store(true);
                                     session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);

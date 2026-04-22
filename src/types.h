@@ -174,6 +174,14 @@ struct CameraSession {
     std::atomic<bool> disconnected{false};
     std::atomic<bool> healthy{false};
     std::atomic<uint32_t> restartCount{0};
+    // True while attachSessionDevice + startCameraSession is in flight on
+    // some worker thread. Femto Bolt's pipeline init after a hotplug event
+    // can take 5-7 seconds (SDK internal device creation + depth engine
+    // load), during which no frames arrive. The main thread's no-frame
+    // timeout must NOT interpret this as a stuck session and trigger
+    // another reattach — that race kills the pipeline right as it starts
+    // streaming and crashes the SDK.
+    std::atomic<bool> attachInProgress{false};
 
     CameraViewState viewState;
     StreamSettings streamSettings;

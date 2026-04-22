@@ -500,6 +500,11 @@ void applyStreamSettingsToAllSessions(AppRuntime &runtime) {
         session->streamSettings = runtime.streamSettings;
         if(!session->pipeline) continue;
 
+        // Prevent the main render thread's 5s timeout from marking the session
+        // disconnected while we tear down & rebuild the pipeline — the race
+        // can corrupt SDK state mid-transition.
+        session->attachInProgress.store(true);
+
         // Stop IMU first to avoid callbacks firing on a torn-down pipeline.
         try { stopImuSensors(session); } catch(...) {}
 
@@ -541,6 +546,7 @@ void applyStreamSettingsToAllSessions(AppRuntime &runtime) {
         } catch(...) {
             logSession(session, "stream settings apply failed: unknown error");
         }
+        session->attachInProgress.store(false);
     }
 }
 
@@ -638,17 +644,21 @@ void registerDeviceHotplugHandler(ob::Context &context, AppRuntime &runtime) {
                                 logSession(session, "added event while still connected — treating as port switch");
                                 disconnectSession(session, "port switch (added without prior removed)");
                             }
+                            session->attachInProgress.store(true);
                             try {
                                 attachSessionDevice(session, dev);
                                 session->reconnecting.store(true);
                                 startCameraSession(session);
                                 logSession(session, "recovered via device-changed callback");
                                 session->reattachNotBefore = std::chrono::steady_clock::time_point::min();
+                                session->attachInProgress.store(false);
                             } catch(const std::exception &e) {
+                                session->attachInProgress.store(false);
                                 logSession(session, std::string("hotplug reattach failed: ") + e.what());
                                 session->disconnected.store(true);
                                 session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
                             } catch(...) {
+                                session->attachInProgress.store(false);
                                 logSession(session, "hotplug reattach failed: unknown");
                                 session->disconnected.store(true);
                                 session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
@@ -667,6 +677,13 @@ void registerDeviceHotplugHandler(ob::Context &context, AppRuntime &runtime) {
 void updateSessionFromFrames(const std::shared_ptr<CameraSession> &session) {
     if(!session) return;
     if(session->disconnected.load()) return;
+
+    // If a worker thread is currently in the middle of attach + start for
+    // this session, lastFrameReceived legitimately isn't advancing yet —
+    // the SDK's pipeline init can take 5-7s on a hotplug. Don't fire the
+    // silent-failure timeout during that window; it would race the worker
+    // and tear down a pipeline that's about to start streaming.
+    if(session->attachInProgress.load()) return;
 
     const auto now = std::chrono::steady_clock::now();
     // If no frame has arrived for a while, mark the session disconnected and
