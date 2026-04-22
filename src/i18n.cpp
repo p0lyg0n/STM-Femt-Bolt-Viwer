@@ -67,6 +67,9 @@ const char *kStrings[(int)S::_Count][3] = {
     /* TipLang              */ {u8"UI言語を切り替えます\n日本語 / English / 한국어",
                                 u8"Switch UI language\n日本語 / English / 한국어",
                                 u8"UI 언어 변경\n日本語 / English / 한국어"},
+    /* TipRenderFps         */ {u8"UI の描画フレームレート\nウィンドウ全体が 1 秒に何回描き直されているかを表します\nカメラのフレームレートではありません (それは各カメラの FPS 表示を見てください)\n通常は 60 前後が目安",
+                                u8"UI render frame rate\nHow many times per second the whole window is redrawn.\nThis is NOT the camera frame rate — see each camera's FPS label for that.\nTypically hovers around 60.",
+                                u8"UI 렌더링 프레임 레이트\n윈도우 전체가 초당 몇 번 다시 그려지는지 나타냅니다\n카메라 프레임 레이트와는 다릅니다 (각 카메라의 FPS 표시를 확인하세요)\n보통 60 전후"},
     /* TipViewMode          */ {u8"点群の描画モードを切替\n"
                                 u8"GPU MESH:  三角形メッシュ (詳細・重め)\n"
                                 u8"GPU POINT: 点群 (軽量)\n"

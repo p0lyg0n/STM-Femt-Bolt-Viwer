@@ -47,6 +47,7 @@ enum class S {
 
     // Tooltips (may include \n for multi-line)
     TipLang,
+    TipRenderFps,
     TipViewMode,
     TipViewReset,
     TipStreamDepth,

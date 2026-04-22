@@ -98,7 +98,7 @@ int main() try {
 
     std::cout << logc::brightCyan << logc::bold
               << "==================================================\n"
-              << "  STM Femto Bolt Viewer\n"
+              << "  STM2 Femto Bolt Viewer\n"
               << "==================================================" << logc::reset << "\n";
 
     // Load persisted user preferences (language + display mode + stream preset).
@@ -274,7 +274,7 @@ int main() try {
         ImFont *fontL = runtime.fontLarge  ? runtime.fontLarge  : ImGui::GetFont();
         ImFont *fontS = runtime.fontSmall  ? runtime.fontSmall  : ImGui::GetFont();
 
-        const char *title = "STM Femto Bolt Viewer";
+        const char *title = "STM2 Femto Bolt Viewer";
         const char *msg   = "起動中... カメラを初期化しています";
         const char *sub   = "Initializing cameras, please wait.";
         ImVec2 tSz = fontL->CalcTextSizeA(26.0f, FLT_MAX, 0.0f, title);

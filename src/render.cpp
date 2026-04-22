@@ -354,13 +354,14 @@ void renderSidebar(AppRuntime &runtime) {
     // ===== Title =====
     //
     ImGui::PushFont(fontL);
-    ImGui::TextColored(ImVec4(0.92f, 0.92f, 0.97f, 1.0f), "Femto Bolt");
+    ImGui::TextColored(ImVec4(0.92f, 0.92f, 0.97f, 1.0f), "STM2 Femto Bolt Viewer");
     ImGui::PopFont();
 
     const double renderFps = runtime.sessions.empty() ? 0.0 : runtime.sessions.front()->fpsLog.fps;
-    ImGui::SameLine();
     ImGui::PushFont(fontS);
-    ImGui::TextDisabled("%.0f FPS", renderFps);
+    ImGui::Text("%.0f FPS", renderFps);
+    tooltipOnHover(i18n::L(i18n::S::TipRenderFps));
+    ImGui::SameLine();
     ImGui::TextDisabled("%s", i18n::L(i18n::S::SidebarMonitor));
     ImGui::PopFont();
 

@@ -40,7 +40,7 @@
 
 constexpr int kInitWinW = 960;
 constexpr int kInitWinH = 360;
-constexpr const char *kWindowTitle = "STM Femto Bolt Viewer";
+constexpr const char *kWindowTitle = "STM2 Femto Bolt Viewer";
 constexpr float kPanelAspectRatio = 16.0f / 9.0f;
 constexpr double kPointPaneStartRatio = 2.0 / 3.0;
 constexpr float kYawSensitivity = 0.35f;
