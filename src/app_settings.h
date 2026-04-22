@@ -13,6 +13,7 @@ struct AppSettings {
     PointRenderMode  pointMode = PointRenderMode::GpuMesh;
     StreamSettings   stream;
     bool             showIr    = false;
+    bool             vsync     = true;
 };
 
 // Reads settings.ini next to the exe. Missing file / keys fall back to defaults.

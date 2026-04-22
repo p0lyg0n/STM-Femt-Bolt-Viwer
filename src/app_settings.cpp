@@ -94,6 +94,8 @@ AppSettings load() {
             out.stream.fps = parseInt(val, out.stream.fps);
         } else if(key == "show_ir") {
             out.showIr = (val == "1" || val == "true" || val == "yes");
+        } else if(key == "vsync") {
+            out.vsync = (val == "1" || val == "true" || val == "yes");
         }
     }
     return out;
@@ -110,6 +112,7 @@ void save(const AppSettings &s) {
     f << "color_h="     << s.stream.colorH               << "\n";
     f << "fps="         << s.stream.fps                  << "\n";
     f << "show_ir="     << (s.showIr ? "1" : "0")        << "\n";
+    f << "vsync="       << (s.vsync  ? "1" : "0")        << "\n";
 }
 
 } // namespace app_settings

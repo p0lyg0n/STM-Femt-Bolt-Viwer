@@ -165,7 +165,7 @@ int main() try {
         return ret;
     }
     glfwMakeContextCurrent(window);
-    glfwSwapInterval(1);
+    glfwSwapInterval(loadedSettings.vsync ? 1 : 0);
 
     // Show the UI background color immediately so the window never flashes white.
     glClearColor(0.05f, 0.04f, 0.06f, 1.0f);
@@ -177,6 +177,7 @@ int main() try {
     AppRuntime runtime;
     runtime.streamSettings = loadedSettings.stream;
     runtime.showIr         = loadedSettings.showIr;
+    runtime.vsync          = loadedSettings.vsync;
     {
         const char *v   = reinterpret_cast<const char *>(glGetString(GL_VENDOR));
         const char *r   = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
@@ -370,6 +371,7 @@ int main() try {
         saved.pointMode = sessions.empty() ? loadedSettings.pointMode
                                            : sessions.front()->viewState.pointMode;
         saved.showIr    = runtime.showIr;
+        saved.vsync     = runtime.vsync;
         app_settings::save(saved);
     }
 

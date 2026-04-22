@@ -420,6 +420,19 @@ void renderSidebar(AppRuntime &runtime) {
         ImGui::PushFont(fontS);
         ImGui::TextDisabled("%s", i18n::L(i18n::S::ViewResetHint));
         ImGui::PopFont();
+
+        ImGui::Spacing();
+
+        const char *vsyncLabel = runtime.vsync ? i18n::L(i18n::S::ViewVsyncOn)
+                                               : i18n::L(i18n::S::ViewVsyncOff);
+        if(ImGui::Button(vsyncLabel, ImVec2(-1, 28))) {
+            runtime.vsync = !runtime.vsync;
+            glfwSwapInterval(runtime.vsync ? 1 : 0);
+        }
+        tooltipOnHover(i18n::L(i18n::S::TipVsync));
+        ImGui::PushFont(fontS);
+        ImGui::TextDisabled("%s", i18n::L(i18n::S::ViewVsyncHint));
+        ImGui::PopFont();
     }
 
     drawSectionSeparator();

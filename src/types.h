@@ -244,6 +244,10 @@ struct AppRuntime {
     // When true, the middle pane shows the IR (grayscale) image instead of Depth.
     // Toggled by clicking the middle pane.
     bool showIr = false;
+    // When true, glfwSwapInterval(1) is active — UI is capped to the monitor
+    // refresh rate. Off gives snappier mouse drag at the cost of occasional
+    // tearing and a bit more GPU power.
+    bool vsync  = true;
 };
 
 struct Viewport {

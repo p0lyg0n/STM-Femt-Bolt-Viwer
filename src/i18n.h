@@ -22,6 +22,9 @@ enum class S {
     ViewModeHint,
     ViewResetBtn,
     ViewResetHint,
+    ViewVsyncOn,
+    ViewVsyncOff,
+    ViewVsyncHint,
 
     // STREAM section
     StreamDepthPrefix,
@@ -50,6 +53,7 @@ enum class S {
     TipRenderFps,
     TipViewMode,
     TipViewReset,
+    TipVsync,
     TipStreamDepth,
     TipStreamColor,
     TipStreamFps,

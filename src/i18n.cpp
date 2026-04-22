@@ -28,6 +28,9 @@ const char *kStrings[(int)S::_Count][3] = {
     /* ViewResetHint        */ {u8"角度・ZOOM・パン 初期化  (R)",
                                 u8"angle / zoom / pan  (R)",
                                 u8"각도 · 줌 · 팬 초기화  (R)"},
+    /* ViewVsyncOn          */ {u8"VSync: ON",             u8"VSync: ON",                u8"VSync: ON"},
+    /* ViewVsyncOff         */ {u8"VSync: OFF",            u8"VSync: OFF",               u8"VSync: OFF"},
+    /* ViewVsyncHint        */ {u8"OFF で応答が軽くなる",  u8"OFF = snappier drag",       u8"OFF로 하면 반응이 빨라짐"},
 
     // ---- STREAM ----
     /* StreamDepthPrefix    */ {u8"Depth: ",              u8"Depth: ",                  u8"Depth: "},
@@ -88,6 +91,19 @@ const char *kStrings[(int)S::_Count][3] = {
     /* TipViewReset         */ {u8"3Dビューの角度・ズーム・パンを初期状態に戻します\nショートカット: R キー",
                                 u8"Reset 3D view angle / zoom / pan\nShortcut: R key",
                                 u8"3D 뷰의 각도 · 줌 · 팬을 초기 상태로 되돌립니다\n단축키: R 키"},
+    /* TipVsync             */ {u8"垂直同期 (VSync) の ON/OFF を切替\n"
+                                u8"ON: 60Hz でキャップ (標準)。表示は安定\n"
+                                u8"OFF: モニタ同期せず描画。点群ドラッグなどの応答が軽くなるが、\n"
+                                u8"画面の一部で 1〜2px のティアリング (段差) が出ることがある。\n"
+                                u8"GPU 消費電力・温度がわずかに上がる (+10〜25W)。",
+                                u8"Toggle vertical sync (VSync).\n"
+                                u8"ON: capped to monitor refresh (60Hz). Stable visuals.\n"
+                                u8"OFF: snappier mouse drag at the cost of occasional 1-2px tearing.\n"
+                                u8"GPU draws a bit more power (+10-25W).",
+                                u8"수직 동기화 (VSync) 전환\n"
+                                u8"ON: 모니터 주사율에 제한 (60Hz). 표시 안정적.\n"
+                                u8"OFF: 마우스 드래그 반응이 빨라지지만 1-2px 티어링이 생길 수 있음.\n"
+                                u8"GPU 소비 전력·온도가 조금 증가 (+10-25W)."},
     /* TipStreamDepth       */ {u8"Depth ストリーム解像度を切替\n"
                                 u8"320x288 → 640x576 → 512x512 → 1024x1024\n"
                                 u8"全カメラに同じ設定が適用され、再接続されます",
