@@ -209,9 +209,31 @@ void startUsbTopologyWorker(ob::Context &context, AppRuntime &runtime) {
                                         std::this_thread::sleep_for(std::chrono::milliseconds(50));
                                     }
                                     if(session->lastFrameReceived <= attachTime) {
-                                        logSession(session, "attached but no frames in 2s — device likely partially enumerated; backing off");
-                                        disconnectSession(session, "no frames after attach");
-                                        session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+                                        logSession(session, "attached but no frames in 2s — rebooting device to force re-enumeration");
+                                        // Force the device firmware to reboot. This is the only
+                                        // reliable way out of the "color sensor not found" state
+                                        // after a USB port switch: Windows / Orbbec have the
+                                        // device half-enumerated and pipeline recreation alone
+                                        // cannot recover it. A firmware reboot causes the device
+                                        // to re-announce to the OS, triggering a fresh hotplug
+                                        // remove+add pair and a clean attach from scratch.
+                                        try {
+                                            std::shared_ptr<ob::Device> dev;
+                                            {
+                                                std::lock_guard<std::mutex> guard(session->latestFrameMutex);
+                                                dev = session->device;
+                                            }
+                                            if(dev) dev->reboot();
+                                        } catch(const std::exception &e) {
+                                            logSession(session, std::string("device->reboot() threw: ") + e.what());
+                                        } catch(...) {
+                                            logSession(session, "device->reboot() threw unknown");
+                                        }
+                                        disconnectSession(session, "rebooted device; waiting for hotplug add");
+                                        // Longer backoff — reboot + USB re-enumeration takes
+                                        // several seconds. We'll reattach either via the hotplug
+                                        // callback (faster) or the next poll cycle after backoff.
+                                        session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::seconds(5);
                                     } else {
                                         // Real success: clear the backoff.
                                         session->reattachNotBefore = std::chrono::steady_clock::time_point::min();
