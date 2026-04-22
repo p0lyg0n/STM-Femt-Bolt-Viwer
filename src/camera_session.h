@@ -38,6 +38,13 @@ void attachSessionDevice(const std::shared_ptr<CameraSession> &session, const st
 // Mark session as disconnected and free device resources (renamed from markSessionDisconnected).
 void disconnectSession(const std::shared_ptr<CameraSession> &session, const std::string &reason);
 
+// Log a reattach failure, flip the session back to disconnected, and schedule
+// the next allowed retry. Used in both the hotplug callback and the USB
+// topology worker; caller is expected to already hold session->lifecycleMutex.
+void recordReattachFailure(const std::shared_ptr<CameraSession> &session,
+                           const std::string &reason,
+                           std::chrono::milliseconds backoff);
+
 // ---------------------------------------------------------------------------
 // IMU sensors
 // ---------------------------------------------------------------------------

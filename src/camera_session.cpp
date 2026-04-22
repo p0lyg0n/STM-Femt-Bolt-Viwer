@@ -248,16 +248,47 @@ void attachSessionDevice(const std::shared_ptr<CameraSession> &session, const st
     syncSessionDeviceInfo(session, device);
 }
 
+namespace {
+// Stop an Orbbec sensor without throwing (SDK can throw if the underlying
+// device is gone). Always resets the owning shared_ptr so subsequent code
+// sees it as null.
+void stopSensorSafely(std::shared_ptr<ob::Sensor> &sensor) {
+    if(!sensor) return;
+    try { sensor->stop(); } catch(...) {}
+    sensor.reset();
+}
+
+// Find the session whose serial number matches the given one. Used by both
+// the hotplug callback and the USB topology worker to route device events.
+std::shared_ptr<CameraSession> findSessionBySerial(
+    const std::vector<std::shared_ptr<CameraSession>> &sessions,
+    const std::string &serial) {
+    if(serial.empty()) return nullptr;
+    for(const auto &session : sessions) {
+        if(session && session->serialNumber == serial) return session;
+    }
+    return nullptr;
+}
+} // namespace
+
 void stopImuSensors(const std::shared_ptr<CameraSession> &session) {
     if(!session) return;
-    if(session->accelSensor) {
-        try { session->accelSensor->stop(); } catch(...) {}
-        session->accelSensor.reset();
-    }
-    if(session->gyroSensor) {
-        try { session->gyroSensor->stop(); } catch(...) {}
-        session->gyroSensor.reset();
-    }
+    stopSensorSafely(session->accelSensor);
+    stopSensorSafely(session->gyroSensor);
+}
+
+// Common bookkeeping when a reattach attempt fails (exception or silent
+// failure). Flips the session back to disconnected, clears attachInProgress,
+// logs the reason, and sets the next-allowed reattach time to now + backoff.
+// Safe to call from any thread that already holds session->lifecycleMutex.
+void recordReattachFailure(const std::shared_ptr<CameraSession> &session,
+                           const std::string &reason,
+                           std::chrono::milliseconds backoff) {
+    if(!session) return;
+    session->attachInProgress.store(false);
+    logSession(session, reason);
+    session->disconnected.store(true);
+    session->reattachNotBefore = std::chrono::steady_clock::now() + backoff;
 }
 
 void disconnectSession(const std::shared_ptr<CameraSession> &session, const std::string &reason) {
@@ -535,7 +566,7 @@ void applyStreamSettingsToAllSessions(AppRuntime &runtime) {
 
         // Small delay so the SDK can finish tearing down the previous
         // stream internally before we bring it back up with new config.
-        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        std::this_thread::sleep_for(std::chrono::milliseconds(kStreamRebuildDelayMs));
 
         try {
             startCameraSession(session);
@@ -603,18 +634,15 @@ void registerDeviceHotplugHandler(ob::Context &context, AppRuntime &runtime) {
                         auto info = dev->getDeviceInfo();
                         if(!info) continue;
                         const auto serialCStr = deviceSerialText(info);
-                        std::string serial = serialCStr ? serialCStr : "";
-                        if(serial.empty()) continue;
-                        for(auto &session : runtime.sessions) {
-                            if(!session || session->serialNumber != serial) continue;
-                            // Serialize with any in-flight attach/restart on the
-                            // other thread (USB topology worker). The guarded
-                            // disconnected flag check prevents redundant work.
-                            std::lock_guard<std::mutex> lk(session->lifecycleMutex);
-                            if(session->disconnected.load()) break;
-                            disconnectSession(session, "device removed (hotplug callback)");
-                            break;
-                        }
+                        const std::string serial = serialCStr ? serialCStr : "";
+                        auto session = findSessionBySerial(runtime.sessions, serial);
+                        if(!session) continue;
+                        // Serialize with any in-flight attach/restart on the
+                        // other thread (USB topology worker). The guarded
+                        // disconnected flag check prevents redundant work.
+                        std::lock_guard<std::mutex> lk(session->lifecycleMutex);
+                        if(session->disconnected.load()) continue;
+                        disconnectSession(session, "device removed (hotplug callback)");
                     }
                 } catch(...) {}
             }
@@ -628,41 +656,36 @@ void registerDeviceHotplugHandler(ob::Context &context, AppRuntime &runtime) {
                         auto info = dev->getDeviceInfo();
                         if(!info) continue;
                         const auto serialCStr = deviceSerialText(info);
-                        std::string serial = serialCStr ? serialCStr : "";
-                        if(serial.empty()) continue;
-                        for(auto &session : runtime.sessions) {
-                            if(!session || session->serialNumber != serial) continue;
-                            std::lock_guard<std::mutex> lk(session->lifecycleMutex);
-                            // Only act on "added" events when the session is currently
-                            // disconnected. Duplicate added events for an already-
-                            // connected session are ignored — aggressive
-                            // "port-switch" auto-recovery caused more harm than it
-                            // fixed. For the port-switch scenario, the main thread's
-                            // 5s frame-timeout will mark the session disconnected if
-                            // frames actually stop; from there we go through the
-                            // normal reattach path.
-                            if(!session->disconnected.load()) break;
-                            if(std::chrono::steady_clock::now() < session->reattachNotBefore) break;
-                            session->attachInProgress.store(true);
-                            try {
-                                attachSessionDevice(session, dev);
-                                session->reconnecting.store(true);
-                                startCameraSession(session);
-                                logSession(session, "recovered via device-changed callback");
-                                session->reattachNotBefore = std::chrono::steady_clock::time_point::min();
-                                session->attachInProgress.store(false);
-                            } catch(const std::exception &e) {
-                                session->attachInProgress.store(false);
-                                logSession(session, std::string("hotplug reattach failed: ") + e.what());
-                                session->disconnected.store(true);
-                                session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
-                            } catch(...) {
-                                session->attachInProgress.store(false);
-                                logSession(session, "hotplug reattach failed: unknown");
-                                session->disconnected.store(true);
-                                session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
-                            }
-                            break;
+                        const std::string serial = serialCStr ? serialCStr : "";
+                        auto session = findSessionBySerial(runtime.sessions, serial);
+                        if(!session) continue;
+                        std::lock_guard<std::mutex> lk(session->lifecycleMutex);
+                        // Only act on "added" events when the session is currently
+                        // disconnected. Duplicate added events for an already-
+                        // connected session are ignored — aggressive
+                        // "port-switch" auto-recovery caused more harm than it
+                        // fixed. For the port-switch scenario, the main thread's
+                        // 5s frame-timeout will mark the session disconnected if
+                        // frames actually stop; from there we go through the
+                        // normal reattach path.
+                        if(!session->disconnected.load()) continue;
+                        if(std::chrono::steady_clock::now() < session->reattachNotBefore) continue;
+                        session->attachInProgress.store(true);
+                        try {
+                            attachSessionDevice(session, dev);
+                            session->reconnecting.store(true);
+                            startCameraSession(session);
+                            logSession(session, "recovered via device-changed callback");
+                            session->reattachNotBefore = std::chrono::steady_clock::time_point::min();
+                            session->attachInProgress.store(false);
+                        } catch(const std::exception &e) {
+                            recordReattachFailure(session,
+                                std::string("hotplug reattach failed: ") + e.what(),
+                                std::chrono::milliseconds(kReattachExceptionBackoffMs));
+                        } catch(...) {
+                            recordReattachFailure(session,
+                                "hotplug reattach failed: unknown",
+                                std::chrono::milliseconds(kReattachExceptionBackoffMs));
                         }
                     }
                 } catch(...) {}
@@ -691,10 +714,10 @@ void updateSessionFromFrames(const std::shared_ptr<CameraSession> &session) {
     // for the SDK's USB timeout (3–5s) and, worse, can spin-retry on a
     // partially-enumerated device — logging the SDK warning
     // "Device Component 'color sensor' not found!" indefinitely.
-    // 5 seconds tolerates normal post-attach startup delay while catching
+    // kFrameTimeoutSec tolerates normal post-attach startup delay while catching
     // silent-failure attaches fast (e.g. replug to a different USB port where
     // start() returns cleanly but no frames ever flow).
-    if(now - session->lastFrameReceived > std::chrono::seconds(5)) {
+    if(now - session->lastFrameReceived > std::chrono::seconds(kFrameTimeoutSec)) {
         if(!session->disconnected.exchange(true)) {
             logSession(session, "no frames for 5s — handing recovery to USB worker");
         }

@@ -202,7 +202,7 @@ void startUsbTopologyWorker(ob::Context &context, AppRuntime &runtime) {
                                     // tear the session down and back off longer so we
                                     // don't spin on pipeline create/destroy.
                                     const auto attachTime = std::chrono::steady_clock::now();
-                                    const auto waitEnd    = attachTime + std::chrono::seconds(2);
+                                    const auto waitEnd    = attachTime + std::chrono::seconds(kPostAttachFrameWaitSec);
                                     while(std::chrono::steady_clock::now() < waitEnd &&
                                           !runtime.usbTopologyStop.load()) {
                                         if(session->lastFrameReceived > attachTime) break;
@@ -219,22 +219,20 @@ void startUsbTopologyWorker(ob::Context &context, AppRuntime &runtime) {
                                         // to force a full recovery.
                                         logSession(session, "attached but no frames in 2s — leaving disconnected (use 'Restart App' to recover)");
                                         disconnectSession(session, "no frames after attach");
-                                        session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+                                        session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::seconds(kSilentFailureBackoffSec);
                                     } else {
                                         // Real success: clear the backoff.
                                         session->reattachNotBefore = std::chrono::steady_clock::time_point::min();
                                     }
                                     session->attachInProgress.store(false);
                                 } catch(const std::exception &e) {
-                                    session->attachInProgress.store(false);
-                                    logSession(session, std::string("restart failed after USB return: ") + e.what());
-                                    session->disconnected.store(true);
-                                    session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+                                    recordReattachFailure(session,
+                                        std::string("restart failed after USB return: ") + e.what(),
+                                        std::chrono::milliseconds(kReattachExceptionBackoffMs));
                                 } catch(...) {
-                                    session->attachInProgress.store(false);
-                                    logSession(session, "restart failed after USB return: unknown error");
-                                    session->disconnected.store(true);
-                                    session->reattachNotBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+                                    recordReattachFailure(session,
+                                        "restart failed after USB return: unknown error",
+                                        std::chrono::milliseconds(kReattachExceptionBackoffMs));
                                 }
                             }
                         } else if(!session->disconnected.load()) {
@@ -246,10 +244,11 @@ void startUsbTopologyWorker(ob::Context &context, AppRuntime &runtime) {
                     }
                 }
             }
-            // Poll every ~500ms so a physical unplug is caught before the
-            // main thread's 8s frame-timeout path tries to restart a dead device.
-            for(int i = 0; i < 5 && !runtime.usbTopologyStop.load(); ++i) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            // Poll every ~500ms (kUsbTopologyPollSliceMs × kUsbTopologyPollSlices)
+            // so a physical unplug is caught before the main thread's frame
+            // timeout path. Sliced so the worker reacts to the shutdown flag quickly.
+            for(int i = 0; i < kUsbTopologyPollSlices && !runtime.usbTopologyStop.load(); ++i) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(kUsbTopologyPollSliceMs));
             }
         }
     });

@@ -71,6 +71,31 @@ constexpr int kSidebarW = 360;
 constexpr int kSidebarPad = 12;
 constexpr int kSidebarSectionGap = 10;
 constexpr int kSidebarHeaderH = 42;
+
+// ---------------------------------------------------------------------------
+// Timing constants for the connection-recovery state machine
+// ---------------------------------------------------------------------------
+// Main thread's silent-failure detection: if no frame arrives for this long
+// the session is marked disconnected and the USB worker / hotplug callback
+// take over recovery on their threads.
+constexpr int kFrameTimeoutSec = 5;
+// After a reattach, the USB topology worker waits this long for the first
+// frame before classifying the attach as a silent failure.
+constexpr int kPostAttachFrameWaitSec = 2;
+// Short backoff used after an attach threw (device is present but SDK
+// threw during pipeline start).
+constexpr int kReattachExceptionBackoffMs = 1500;
+// Longer backoff used after a silent failure (no frames flowed). Gives
+// Windows / Orbbec time to settle before the next attempt.
+constexpr int kSilentFailureBackoffSec = 10;
+// Delay between pipeline tear-down and re-start when stream settings change
+// (resolution / fps).
+constexpr int kStreamRebuildDelayMs = 150;
+// USB topology background poll cadence: total interval is kUsbTopologyPollSlice
+// × kUsbTopologyPollSlices (= 500ms). Split so the worker can react to the
+// shutdown flag quickly.
+constexpr int kUsbTopologyPollSliceMs = 100;
+constexpr int kUsbTopologyPollSlices = 5;
 // Per-device header height above each session's image panes. Contains the
 // device name row and a second row with USB / IMU / TEMP in three columns.
 // Compact enough that 4 cameras fit as 1x4 vertical in a typical 1280x960 window.
