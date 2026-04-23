@@ -142,6 +142,31 @@ fps=30
 | CMake | 3.20 以上 |
 | インターネット接続 | 初回ビルド時に Dear ImGui v1.91.6 を GitHub からダウンロード |
 
+### devenv + direnv での開発（推奨）
+
+`devenv` と `direnv` を使うと、リポジトリに入るだけで開発コマンドを使える状態にできます。
+
+1. `devenv` と `direnv` をインストール
+2. `.env.local` を作成して SDK パスを設定
+3. `direnv allow` を実行
+4. `dev-doctor` → `dev-build` → `dev-run` の順で実行
+
+```powershell
+Copy-Item .env.local.example .env.local
+direnv allow
+dev-doctor
+dev-build
+dev-run
+```
+
+配布用 zip は `dev-package` で作成できます。
+
+```powershell
+dev-package
+```
+
+ローカル SDK パスは `.env.local` で上書きできます（既定値: `C:\Program Files\OrbbecSDK 2.7.6`）。
+
 ### フォントの前提
 
 UI は Windows 同梱フォントを実行時に読み込みます。
@@ -154,7 +179,7 @@ UI は Windows 同梱フォントを実行時に読み込みます。
 
 Windows 10 / 11 には `meiryo.ttc` と `malgun.ttf` の両方が標準で入っているため、特に追加の作業は不要です。
 
-### ビルド
+### ビルド（従来手順・後方互換）
 
 ```powershell
 .\build.ps1
