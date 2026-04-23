@@ -145,6 +145,13 @@ fps=30
 ### devenv + direnv での開発（推奨）
 
 `devenv` と `direnv` を使うと、リポジトリに入るだけで開発コマンドを使える状態にできます。
+開発環境セットアップはクロスプラットフォーム対応ですが、`dev-build` による実バイナリビルドは現状 Windows のみ対応です。
+
+PowerShell で使う場合は、先に `direnv` フックを有効化してください（未設定だと `direnv allow` だけでは `dev-*` コマンドが読み込まれません）。
+
+```powershell
+Invoke-Expression "$(direnv hook pwsh)"
+```
 
 1. `devenv` と `direnv` をインストール
 2. `.env.local` を作成して SDK パスを設定
@@ -163,6 +170,14 @@ dev-run
 
 ```powershell
 dev-package
+```
+
+`direnv` フックを使わない場合でも、次のように `devenv shell -- <command>` で実行できます。
+
+```powershell
+devenv shell -- dev-doctor
+devenv shell -- dev-build
+devenv shell -- dev-run
 ```
 
 ローカル SDK パスは `.env.local` で上書きできます（既定値: `C:\Program Files\OrbbecSDK 2.7.6`）。
