@@ -28,7 +28,34 @@ if(Test-Path $buildDir) {
 }
 New-Item -ItemType Directory -Path $buildDir | Out-Null
 
-$cmd = "call `"$vcvars`" && `"$cmake`" -S `"$root`" -B `"$buildDir`" -G `"NMake Makefiles`" -DCMAKE_BUILD_TYPE=Release -DORBBEC_SDK_DIR=`"$orbbecSdkDir`" && `"$cmake`" --build `"$buildDir`" --config Release"
+$vcpkgRoot = $env:VCPKG_ROOT
+if([string]::IsNullOrWhiteSpace($vcpkgRoot)) {
+  $localVcpkgRoot = Join-Path $root ".devenv\sdks\vcpkg"
+  if(Test-Path $localVcpkgRoot) {
+    $vcpkgRoot = $localVcpkgRoot
+  }
+}
+
+$toolchainArg = ""
+$tripletArg = ""
+if(-not [string]::IsNullOrWhiteSpace($vcpkgRoot)) {
+  $vcpkgToolchain = Join-Path $vcpkgRoot "scripts\buildsystems\vcpkg.cmake"
+  if(!(Test-Path $vcpkgToolchain)) {
+    throw "vcpkg toolchain not found: $vcpkgToolchain"
+  }
+  $triplet = $env:VCPKG_TARGET_TRIPLET
+  if([string]::IsNullOrWhiteSpace($triplet)) {
+    $triplet = "x64-windows"
+  }
+  $toolchainArg = " -DCMAKE_TOOLCHAIN_FILE=`"$vcpkgToolchain`" -DVCPKG_MANIFEST_MODE=ON"
+  $tripletArg = " -DVCPKG_TARGET_TRIPLET=`"$triplet`""
+  Write-Host "Using vcpkg: VCPKG_ROOT=$vcpkgRoot, triplet=$triplet" -ForegroundColor Cyan
+} else {
+  Write-Host "VCPKG_ROOT is not set; proceeding without vcpkg toolchain." -ForegroundColor Yellow
+}
+
+$configureCmd = "`"$cmake`" -S `"$root`" -B `"$buildDir`" -G `"NMake Makefiles`" -DCMAKE_BUILD_TYPE=Release -DORBBEC_SDK_DIR=`"$orbbecSdkDir`"$toolchainArg$tripletArg"
+$cmd = "call `"$vcvars`" && $configureCmd && `"$cmake`" --build `"$buildDir`" --config Release"
 cmd /c "$cmd"
 if($LASTEXITCODE -ne 0) {
   throw "Build failed with exit code $LASTEXITCODE"

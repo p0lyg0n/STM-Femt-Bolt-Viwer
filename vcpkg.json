@@ -1,0 +1,8 @@
+{
+  "name": "stm-femto-bolt-viewer",
+  "version-string": "0.1.0",
+  "builtin-baseline": "b781af668027bbf77f2f827f47b5c6cd8d825c08",
+  "dependencies": [
+    "glfw3"
+  ]
+}

@@ -21,3 +21,6 @@ devenv.local.yaml
 
 # local environment overrides
 .env.local
+
+# vcpkg manifest artifacts
+vcpkg_installed/

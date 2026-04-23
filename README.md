@@ -156,11 +156,13 @@ Invoke-Expression "$(direnv hook pwsh)"
 1. `devenv` と `direnv` をインストール
 2. `.env.local` を作成して SDK パスを設定
 3. `direnv allow` を実行
-4. `dev-doctor` → `dev-build` → `dev-run` の順で実行
+4. 必要な依存を取得（`dev-download-sdks`）
+5. `dev-doctor` → `dev-build` → `dev-run` の順で実行
 
 ```powershell
 Copy-Item .env.local.example .env.local
 direnv allow
+dev-download-sdks
 dev-doctor
 dev-build
 dev-run
@@ -176,11 +178,15 @@ dev-package
 
 ```powershell
 devenv shell -- dev-doctor
+devenv shell -- dev-download-sdks
 devenv shell -- dev-build
 devenv shell -- dev-run
 ```
 
 ローカル SDK パスは `.env.local` で上書きできます（既定値: `C:\Program Files\OrbbecSDK 2.7.6`）。
+`dev-download-sdks` は `vcpkg` を `.devenv/sdks/vcpkg` にセットアップし、`vcpkg.json` に基づいて依存（現在は `glfw3`）をインストールします。`ORBBEC_SDK_URL` が設定されている場合は Orbbec SDK も `.devenv/sdks/orbbec` にダウンロードします。
+
+> `build.ps1` は `VCPKG_ROOT`（未設定時は `.devenv/sdks/vcpkg`）を自動検出し、vcpkg toolchain (`scripts/buildsystems/vcpkg.cmake`) を使って configure します。
 
 ### フォントの前提
 
