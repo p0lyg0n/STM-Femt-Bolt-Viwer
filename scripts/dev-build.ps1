@@ -1,12 +1,20 @@
 $ErrorActionPreference = "Stop"
 
-$root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$root = [System.IO.Path]::GetFullPath((Join-Path $scriptDir ".."))
 $vcvars = "C:\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
-$cmake = "C:\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+$bundledCmake = "C:\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
 $buildDir = Join-Path $root "build"
 
 if(!(Test-Path $vcvars)) { throw "vcvars64.bat not found: $vcvars" }
-if(!(Test-Path $cmake)) { throw "cmake not found: $cmake" }
+$cmakeCmd = Get-Command cmake -ErrorAction SilentlyContinue
+if($cmakeCmd) {
+  $cmake = $cmakeCmd.Source
+} elseif(Test-Path $bundledCmake) {
+  $cmake = $bundledCmake
+} else {
+  throw "cmake not found on PATH or at $bundledCmake"
+}
 
 $orbbecSdkDir = $env:ORBBEC_SDK_DIR
 if([string]::IsNullOrWhiteSpace($orbbecSdkDir)) {
@@ -54,7 +62,7 @@ if(-not [string]::IsNullOrWhiteSpace($vcpkgRoot)) {
   Write-Host "VCPKG_ROOT is not set; proceeding without vcpkg toolchain." -ForegroundColor Yellow
 }
 
-$configureCmd = "`"$cmake`" -S `"$root`" -B `"$buildDir`" -G `"NMake Makefiles`" -DCMAKE_BUILD_TYPE=Release -DORBBEC_SDK_DIR=`"$orbbecSdkDir`"$toolchainArg$tripletArg"
+$configureCmd = "`"$cmake`" -S `"$root`" -B `"$buildDir`" -G `"NMake Makefiles`" -DCMAKE_BUILD_TYPE=Release -DORBBEC_SDK_DIR=`"$orbbecSdkDir`" -DCMAKE_PREFIX_PATH=`"$orbbecSdkDir;$orbbecSdkDir\lib`"$toolchainArg$tripletArg"
 $cmd = "call `"$vcvars`" && $configureCmd && `"$cmake`" --build `"$buildDir`" --config Release"
 cmd /c "$cmd"
 if($LASTEXITCODE -ne 0) {

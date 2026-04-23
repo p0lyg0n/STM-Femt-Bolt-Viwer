@@ -3,13 +3,32 @@ project(STMFemtoBoltViewer LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 if(MSVC)
   add_compile_options(/utf-8)
 endif()
 
+include(ResolveOrbbecSDK)
+find_package(OpenGL REQUIRED)
+stm_resolve_orbbec_sdk()
+
+if(TARGET OpenGL::GL)
+  set(STM_OPENGL_TARGET OpenGL::GL)
+elseif(TARGET OpenGL::OpenGL)
+  set(STM_OPENGL_TARGET OpenGL::OpenGL)
+else()
+  message(FATAL_ERROR "No cross-platform OpenGL target exported by find_package(OpenGL).")
+endif()
+
 include(FetchContent)
 set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/_imgui_cache" CACHE PATH "" FORCE)
+# Keep the downloaded Dear ImGui source checkout, but drop generated subbuild state
+# so the cache can be reused across different absolute checkout paths.
+file(REMOVE_RECURSE
+  "${FETCHCONTENT_BASE_DIR}/imgui-subbuild"
+  "${FETCHCONTENT_BASE_DIR}/imgui-build"
+)
 FetchContent_Declare(imgui
   GIT_REPOSITORY https://github.com/ocornut/imgui.git
   GIT_TAG        v1.91.6
@@ -30,12 +49,7 @@ target_include_directories(imgui_lib PUBLIC
   ${imgui_SOURCE_DIR}/backends
   "${CMAKE_SOURCE_DIR}/third_party/glfw/include"
 )
-target_link_libraries(imgui_lib PUBLIC opengl32)
-
-set(ORBBEC_SDK_DIR "C:/Program Files/OrbbecSDK 2.7.6" CACHE PATH "Path to OrbbecSDK root")
-if(NOT EXISTS "${ORBBEC_SDK_DIR}/include/libobsensor/ObSensor.hpp")
-  message(FATAL_ERROR "Orbbec SDK headers not found. ORBBEC_SDK_DIR=${ORBBEC_SDK_DIR}")
-endif()
+target_link_libraries(imgui_lib PUBLIC ${STM_OPENGL_TARGET})
 
 find_package(glfw3 CONFIG QUIET)
 
@@ -54,33 +68,6 @@ else()
   message(FATAL_ERROR "GLFW target not found. Install glfw3 or set ORBBEC_SAMPLE_VIEWER_GLFW_DIR to a valid glfw source directory.")
 endif()
 
-set(ORBBEC_LIB "")
-set(ORBBEC_LIB_CANDIDATES
-  "${ORBBEC_SDK_DIR}/lib/win_x64/OrbbecSDK.lib"
-  "${ORBBEC_SDK_DIR}/lib/OrbbecSDK.lib"
-)
-foreach(CANDIDATE IN LISTS ORBBEC_LIB_CANDIDATES)
-  if(EXISTS "${CANDIDATE}")
-    set(ORBBEC_LIB "${CANDIDATE}")
-    break()
-  endif()
-endforeach()
-if(ORBBEC_LIB STREQUAL "")
-  message(FATAL_ERROR "OrbbecSDK.lib not found. Checked: ${ORBBEC_LIB_CANDIDATES}")
-endif()
-
-set(ORBBEC_RUNTIME_DIR "")
-set(ORBBEC_RUNTIME_CANDIDATES
-  "${ORBBEC_SDK_DIR}/bin"
-  "${ORBBEC_SDK_DIR}/lib/win_x64"
-)
-foreach(CANDIDATE IN LISTS ORBBEC_RUNTIME_CANDIDATES)
-  if(EXISTS "${CANDIDATE}/OrbbecSDK.dll")
-    set(ORBBEC_RUNTIME_DIR "${CANDIDATE}")
-    break()
-  endif()
-endforeach()
-
 add_executable(stm_femto_bolt_viewer
   src/main.cpp
   src/usb_topology.cpp
@@ -95,43 +82,32 @@ add_executable(stm_femto_bolt_viewer
 )
 
 target_include_directories(stm_femto_bolt_viewer PRIVATE
-  ${ORBBEC_SDK_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 target_link_libraries(stm_femto_bolt_viewer PRIVATE
-  ${ORBBEC_LIB}
+  ${STM_ORBBEC_TARGET}
   ${GLFW_TARGET}
-  opengl32
+  ${STM_OPENGL_TARGET}
   imgui_lib
 )
 
-set(ORBBEC_RUNTIME_DLLS "")
-if(NOT ORBBEC_RUNTIME_DIR STREQUAL "")
-  set(ORBBEC_RUNTIME_DLLS
-    "${ORBBEC_RUNTIME_DIR}/OrbbecSDK.dll"
-    "${ORBBEC_RUNTIME_DIR}/ob_usb.dll"
-    "${ORBBEC_RUNTIME_DIR}/depthengine_2_0.dll"
-    "${ORBBEC_RUNTIME_DIR}/live555.dll"
-  )
-endif()
-
-foreach(DLL_PATH IN LISTS ORBBEC_RUNTIME_DLLS)
-  if(EXISTS "${DLL_PATH}")
+foreach(RUNTIME_FILE IN LISTS STM_ORBBEC_RUNTIME_FILES)
+  if(EXISTS "${RUNTIME_FILE}")
     add_custom_command(TARGET stm_femto_bolt_viewer POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      "${DLL_PATH}"
+      "${RUNTIME_FILE}"
       "$<TARGET_FILE_DIR:stm_femto_bolt_viewer>"
     )
   endif()
 endforeach()
 
-if(NOT ORBBEC_RUNTIME_DIR STREQUAL "")
-  if(EXISTS "${ORBBEC_RUNTIME_DIR}/extensions")
+foreach(RUNTIME_DIR IN LISTS STM_ORBBEC_RUNTIME_DIRS)
+  if(EXISTS "${RUNTIME_DIR}")
     add_custom_command(TARGET stm_femto_bolt_viewer POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_directory
-      "${ORBBEC_RUNTIME_DIR}/extensions"
+      "${RUNTIME_DIR}"
       "$<TARGET_FILE_DIR:stm_femto_bolt_viewer>/extensions"
     )
   endif()
-endif()
+endforeach()

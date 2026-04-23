@@ -30,7 +30,7 @@ jobs:
 
       - name: Build (project script)
         shell: cmd
-        run: powershell -ExecutionPolicy Bypass -File .\build.ps1
+        run: powershell -ExecutionPolicy Bypass -File .\scripts\dev-build.ps1
 
       - name: Package zip
         id: pkg
