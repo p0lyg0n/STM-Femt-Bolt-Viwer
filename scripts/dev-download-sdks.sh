@@ -4,6 +4,24 @@ set -euo pipefail
 sdk_root=".devenv/sdks"
 mkdir -p "$sdk_root"
 
+host_os_raw="$(uname -s 2>/dev/null || printf 'unknown')"
+host_arch_raw="$(uname -m 2>/dev/null || printf 'unknown')"
+
+host_os="$host_os_raw"
+case "$host_os_raw" in
+  Darwin) host_os="macos" ;;
+  Linux) host_os="linux" ;;
+  MINGW*|MSYS*|CYGWIN*|Windows_NT) host_os="windows" ;;
+esac
+
+host_arch="$host_arch_raw"
+case "$host_arch_raw" in
+  aarch64) host_arch="arm64" ;;
+  amd64) host_arch="x86_64" ;;
+esac
+
+host_key="${host_os}/${host_arch}"
+
 echo "[dev-download-sdks] sdk_root=$sdk_root"
 vcpkg_dir="$sdk_root/vcpkg"
 if [ -d "$vcpkg_dir/.git" ]; then
@@ -19,9 +37,27 @@ is_windows=0
 if [ "${OS:-}" = "Windows_NT" ]; then
   is_windows=1
 fi
-case "$(uname -s 2>/dev/null || true)" in
+case "$host_os_raw" in
   MINGW*|MSYS*|CYGWIN*|Windows_NT*) is_windows=1 ;;
 esac
+
+vcpkg_tools_dir="$vcpkg_dir/downloads/tools"
+vcpkg_tools_host_key_file="$vcpkg_dir/.dev-download-sdks-host-key"
+stored_host_key=""
+if [ -f "$vcpkg_tools_host_key_file" ]; then
+  stored_host_key="$(cat "$vcpkg_tools_host_key_file")"
+fi
+
+if [ -n "$stored_host_key" ] && [ "$stored_host_key" != "$host_key" ]; then
+  echo "[dev-download-sdks] host changed from $stored_host_key to $host_key"
+  echo "[dev-download-sdks] clearing vcpkg tool cache to avoid cross-arch tool reuse"
+  rm -rf "$vcpkg_tools_dir"
+elif [ -z "$stored_host_key" ] && [ -d "$vcpkg_tools_dir" ]; then
+  echo "[dev-download-sdks] vcpkg tool cache host stamp missing; clearing once for safety"
+  rm -rf "$vcpkg_tools_dir"
+fi
+
+printf '%s\n' "$host_key" > "$vcpkg_tools_host_key_file"
 
 if [ "$is_windows" -eq 1 ]; then
   echo "[dev-download-sdks] bootstrapping vcpkg (Windows)..."
@@ -52,16 +88,16 @@ if [ -z "$triplet" ]; then
   if [ "$is_windows" -eq 1 ]; then
     triplet="x64-windows"
   else
-    case "$(uname -s 2>/dev/null || true)" in
+    case "$host_os_raw" in
       Darwin)
-        if [ "$(uname -m 2>/dev/null || true)" = "arm64" ]; then
+        if [ "$host_arch" = "arm64" ]; then
           triplet="arm64-osx"
         else
           triplet="x64-osx"
         fi
         ;;
       Linux)
-        if [ "$(uname -m 2>/dev/null || true)" = "aarch64" ]; then
+        if [ "$host_arch" = "arm64" ]; then
           triplet="arm64-linux"
         else
           triplet="x64-linux"
