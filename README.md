@@ -142,6 +142,68 @@ fps=30
 | CMake | 3.20 以上 |
 | インターネット接続 | 初回ビルド時に Dear ImGui v1.91.6 を GitHub からダウンロード |
 
+### devenv + direnv での開発（推奨）
+
+`devenv` と `direnv` を使うと、リポジトリに入るだけで開発コマンドを使える状態にできます。
+`dev-build` は macOS / Windows / Linux で CMake configure/build を実行します。
+`dev-run` は macOS / Windows / Linux で同じ入口を使えます（Linux では GUI 用の表示サーバが必要です）。
+`dev-package` は引き続き Windows 向け入口です。
+
+PowerShell で使う場合は、先に `direnv` フックを有効化してください（未設定だと `direnv allow` だけでは `dev-*` コマンドが読み込まれません）。
+
+```powershell
+Invoke-Expression "$(direnv hook pwsh)"
+```
+
+1. `devenv` と `direnv` をインストール
+2. `.env.local` を作成して SDK パスを設定
+3. `direnv allow` を実行
+4. 必要な依存を取得（`dev-download-sdks`）
+5. `dev-doctor` → `dev-build` を実行
+
+```powershell
+Copy-Item .env.local.example .env.local
+direnv allow
+dev-download-sdks
+dev-doctor
+dev-build
+```
+
+#### 実行
+
+Windows:
+
+```powershell
+dev-run
+```
+
+macOS:
+
+```bash
+dev-run
+```
+
+配布用 zip は Windows 上で `dev-package` を使って作成できます。
+
+```powershell
+dev-package
+```
+
+`direnv` フックを使わない場合でも、次のように `devenv shell -- <command>` で実行できます。
+
+```powershell
+devenv shell -- dev-doctor
+devenv shell -- dev-download-sdks
+devenv shell -- dev-build
+devenv shell -- dev-run
+```
+
+ローカル SDK パスは `.env.local` で上書きできます（Windows 既定値: `C:\Program Files\OrbbecSDK 2.7.6`）。
+`dev-download-sdks` は `vcpkg` を `.devenv/sdks/vcpkg` にセットアップし、`vcpkg.json` に基づいて依存（現在は `glfw3`）をインストールします。`ORBBEC_SDK_URL` が設定されている場合は Orbbec SDK も `.devenv/sdks/orbbec` にダウンロードします。
+macOS / Linux では `dev-build` が `.devenv/sdks/orbbec/extracted` 以下の SDK を自動検出します。
+
+> `scripts/dev-build.ps1`（Windows）と `scripts/dev-build.sh`（macOS / Linux）は `VCPKG_ROOT`（未設定時は `.devenv/sdks/vcpkg`）を自動検出し、vcpkg toolchain を使って configure します。
+
 ### フォントの前提
 
 UI は Windows 同梱フォントを実行時に読み込みます。
@@ -154,29 +216,46 @@ UI は Windows 同梱フォントを実行時に読み込みます。
 
 Windows 10 / 11 には `meiryo.ttc` と `malgun.ttf` の両方が標準で入っているため、特に追加の作業は不要です。
 
-### ビルド
+### ビルド（従来手順・後方互換）
+
+Windows:
 
 ```powershell
-.\build.ps1
+.\scripts\dev-build.ps1
+```
+
+macOS / Linux:
+
+```bash
+./scripts/dev-build.sh
 ```
 
 初回ビルド時、CMake が自動的に Dear ImGui v1.91.6 を `_imgui_cache/` へダウンロードします。2回目以降はネット接続不要です。
 
 ### ビルド後の実行
 
+Windows:
+
 ```powershell
 .\build\stm_femto_bolt_viewer.exe
 ```
 
+macOS / Linux:
+
+```bash
+./build/stm_femto_bolt_viewer
+```
+
 ### Orbbec SDK の場所
 
-Orbbec SDK 2.7.6 を公式インストーラーで **`C:\Program Files\OrbbecSDK 2.7.6\`** にインストールしておけば、そのまま `build.ps1` が動きます。
+Orbbec SDK 2.7.6 を公式インストーラーで **`C:\Program Files\OrbbecSDK 2.7.6\`** にインストールしておけば、そのまま `scripts/dev-build.ps1` が動きます。
+macOS では公式 zip を展開したディレクトリを `ORBBEC_SDK_DIR` に指定するか、`dev-download-sdks` で `.devenv/sdks/orbbec/extracted/` に配置してください。
 
 別のパスに SDK を置いている場合は環境変数 `ORBBEC_SDK_DIR` で上書きしてください：
 
 ```powershell
 $env:ORBBEC_SDK_DIR = "D:\path\to\OrbbecSDK"
-.\build.ps1
+.\scripts\dev-build.ps1
 ```
 
 ### ローカルで配布 zip を作る

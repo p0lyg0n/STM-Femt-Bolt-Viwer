@@ -1,0 +1,119 @@
+name: Verify Build
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/build-and-release.yml"
+      - ".github/workflows/verify-build.yml"
+      - ".github/workflows/verify-sdk-download.yml"
+      - "CMakeLists.txt"
+      - "devenv.nix"
+      - "vcpkg.json"
+      - "cmake/**"
+      - "scripts/dev-build.sh"
+      - "scripts/dev-build.ps1"
+      - "scripts/dev-download-sdks.sh"
+  push:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/build-and-release.yml"
+      - ".github/workflows/verify-build.yml"
+      - ".github/workflows/verify-sdk-download.yml"
+      - "CMakeLists.txt"
+      - "devenv.nix"
+      - "vcpkg.json"
+      - "cmake/**"
+      - "scripts/dev-build.sh"
+      - "scripts/dev-build.ps1"
+      - "scripts/dev-download-sdks.sh"
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    env:
+      ORBBEC_SDK_URL: https://github.com/orbbec/OrbbecSDK_v2/releases/download/v2.7.6/OrbbecSDK_v2.7.6_202602022028_d712cda_macOS.zip
+      VCPKG_TARGET_TRIPLET: arm64-osx
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bootstrap vcpkg
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg "$RUNNER_TEMP/vcpkg"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Download Orbbec SDK
+        run: |
+          sdk_zip="$RUNNER_TEMP/orbbec-sdk.zip"
+          sdk_dir="$RUNNER_TEMP/orbbec-sdk"
+          curl -L "$ORBBEC_SDK_URL" -o "$sdk_zip"
+          unzip -q "$sdk_zip" -d "$sdk_dir"
+          header_path="$(find "$sdk_dir" -mindepth 1 -maxdepth 4 -type f -path '*/include/libobsensor/ObSensor.hpp' -print -quit)"
+          if [ -z "$header_path" ]; then
+            echo "Failed to locate ObSensor.hpp in downloaded Orbbec SDK." >&2
+            exit 1
+          fi
+          sdk_root="$(cd "$(dirname "$header_path")/../.." && pwd)"
+          echo "ORBBEC_SDK_DIR=$sdk_root" >> "$GITHUB_ENV"
+          echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DORBBEC_SDK_DIR="$ORBBEC_SDK_DIR" \
+            "-DCMAKE_PREFIX_PATH=$ORBBEC_SDK_DIR;$ORBBEC_SDK_DIR/lib" \
+            "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_MANIFEST_MODE=ON \
+            -DVCPKG_TARGET_TRIPLET="$VCPKG_TARGET_TRIPLET"
+
+      - name: Build
+        run: cmake --build build
+
+  build-windows:
+    runs-on: windows-2022
+    env:
+      ORBBEC_SDK_URL: https://github.com/orbbec/OrbbecSDK_v2/releases/download/v2.7.6/OrbbecSDK_v2.7.6_202602022027_d712cda_win_x64.zip
+      VCPKG_TARGET_TRIPLET: x64-windows
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg "$env:RUNNER_TEMP\vcpkg"
+          & "$env:RUNNER_TEMP\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+          "VCPKG_ROOT=$env:RUNNER_TEMP\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Download Orbbec SDK
+        shell: pwsh
+        run: |
+          $sdkZip = Join-Path $env:RUNNER_TEMP "orbbec-sdk.zip"
+          $sdkDir = Join-Path $env:RUNNER_TEMP "orbbec-sdk"
+          Invoke-WebRequest -Uri $env:ORBBEC_SDK_URL -OutFile $sdkZip
+          Expand-Archive -Path $sdkZip -DestinationPath $sdkDir -Force
+          $header = Get-ChildItem -Path $sdkDir -Recurse -Filter ObSensor.hpp | Select-Object -First 1 -ExpandProperty FullName
+          if ([string]::IsNullOrWhiteSpace($header)) {
+            throw "Failed to locate ObSensor.hpp in downloaded Orbbec SDK."
+          }
+          $sdkRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $header))
+          "ORBBEC_SDK_DIR=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $prefixPath = "$env:ORBBEC_SDK_DIR;$env:ORBBEC_SDK_DIR\lib"
+          cmake -S . -B build `
+            -G "Visual Studio 17 2022" `
+            -A x64 `
+            -DORBBEC_SDK_DIR="$env:ORBBEC_SDK_DIR" `
+            "-DCMAKE_PREFIX_PATH=$prefixPath" `
+            "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_MANIFEST_MODE=ON `
+            -DVCPKG_TARGET_TRIPLET="$env:VCPKG_TARGET_TRIPLET"
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --config Release
