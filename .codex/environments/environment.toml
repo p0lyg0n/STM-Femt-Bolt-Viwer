@@ -1,0 +1,46 @@
+name = "STM-Femt-Bolt-Viwer"
+
+setup_script = """
+set -eu
+
+if command -v direnv >/dev/null 2>&1; then
+  direnv allow || true
+else
+  echo "[setup] direnv not found"
+fi
+
+if command -v devenv >/dev/null 2>&1; then
+  if [ ! -f .env.local ] && [ -f .env.local.example ]; then
+    cp .env.local.example .env.local
+    echo "[setup] created .env.local from .env.local.example"
+    echo "[setup] edit .env.local if ORBBEC_SDK_DIR differs on this machine"
+  fi
+
+  devenv shell -- dev-doctor || true
+else
+  echo "[setup] devenv not found"
+fi
+"""
+
+cleanup_script = """
+set -eu
+
+rm -rf .devenv/tmp 2>/dev/null || true
+rm -rf .tmp 2>/dev/null || true
+"""
+
+[[actions]]
+name = "doctor"
+command = "devenv shell -- dev-doctor"
+
+[[actions]]
+name = "download-sdks"
+command = "devenv shell -- dev-download-sdks"
+
+[[actions]]
+name = "build"
+command = "devenv shell -- dev-build"
+
+[[actions]]
+name = "package"
+command = "devenv shell -- dev-package"
