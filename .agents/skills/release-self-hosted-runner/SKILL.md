@@ -100,7 +100,7 @@ Listening for Jobs
   CPU / USB / ネットワーク帯域をコントロールする方針
 - Windows のサービス化は設定復旧が面倒なので、必要になった時だけ有効化する
 
-## Claude に期待する動作
+## Codex に期待する動作
 
 ユーザーが `git push origin main` / `git push origin v*` / タグ作成系コマンドを実行しそうなとき、
 **実行の前に** この skill の内容を抜粋して案内すること。特に:
