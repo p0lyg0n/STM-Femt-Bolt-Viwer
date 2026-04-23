@@ -38,11 +38,6 @@ tasklist /FI "IMAGENAME eq Runner.Listener.exe" /NH
 tasklist //FI "IMAGENAME eq Runner.Listener.exe" //NH
 ```
 
-**WSL:**
-```bash
-tasklist.exe /FI "IMAGENAME eq Runner.Listener.exe" /NH
-```
-
 出力に `Runner.Listener.exe` があれば起動済み。無ければ未起動 (Queued の原因)。
 
 もう一つの確認方法: GitHub の Runners 設定ページ
@@ -66,11 +61,6 @@ cd C:\actions-runner; .\run.cmd
 **Git Bash / MSYS2:**
 ```bash
 cd /c/actions-runner && ./run.cmd
-```
-
-**WSL:**
-```bash
-cmd.exe /c "cd C:\actions-runner && run.cmd"
 ```
 
 ターミナルを**閉じずに放置**。Queued の job が順番に処理されます。
