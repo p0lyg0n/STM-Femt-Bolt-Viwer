@@ -1,4 +1,5 @@
 build/
+build-*/
 Log/
 release/
 _imgui_cache/

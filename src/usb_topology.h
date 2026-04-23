@@ -1,13 +1,7 @@
 #pragma once
 
 #include "types.h"
-
-// ---------------------------------------------------------------------------
-// USB controller name helpers
-// ---------------------------------------------------------------------------
-
-std::string normalizeUsbControllerName(std::string name);
-std::string formatControllerDisplayName(const SystemUsbTopology &usbMap, const std::string &controllerId, const std::string &fallbackName);
+#include "usb_topology_format.h"
 
 // ---------------------------------------------------------------------------
 // USB topology worker

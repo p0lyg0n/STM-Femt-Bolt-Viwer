@@ -196,6 +196,8 @@ devenv shell -- dev-doctor
 devenv shell -- dev-download-sdks
 devenv shell -- dev-build
 devenv shell -- dev-run
+devenv shell -- dev-format-cpp
+devenv shell -- dev-lint-cpp
 ```
 
 ローカル SDK パスは `.env.local` で上書きできます（Windows 既定値: `C:\Program Files\OrbbecSDK 2.7.6`）。
@@ -203,6 +205,54 @@ devenv shell -- dev-run
 macOS / Linux では `dev-build` が `.devenv/sdks/orbbec/extracted` 以下の SDK を自動検出します。
 
 > `scripts/dev-build.ps1`（Windows）と `scripts/dev-build.sh`（macOS / Linux）は `VCPKG_ROOT`（未設定時は `.devenv/sdks/vcpkg`）を自動検出し、vcpkg toolchain を使って configure します。
+
+### Unit Test / Coverage
+
+Orbbec SDK や OpenGL を使う本体とは別に、設定パーサ・i18n・画素変換・USB 表示名整形だけを `stm_core` として unit test できます。
+テストフレームワークは `Catch2`、runner は `CTest` です。
+
+SDK なしで unit test だけ回す場合:
+
+```bash
+cmake -S . -B build-unit -DSTM_BUILD_APP=OFF -DBUILD_TESTING=ON
+cmake --build build-unit
+ctest --test-dir build-unit --output-on-failure
+```
+
+LLVM coverage を出す場合（Clang 系コンパイラが必要）:
+
+```bash
+cmake -S . -B build-coverage \
+  -DCMAKE_CXX_COMPILER=clang++ \
+  -DSTM_BUILD_APP=OFF \
+  -DBUILD_TESTING=ON \
+  -DSTM_ENABLE_COVERAGE=ON
+cmake --build build-coverage --target coverage
+```
+
+HTML レポートは `build-coverage/coverage/html/index.html` に出力されます。
+
+### C++ Lint / Format
+
+`clang-format` と `clang-tidy` は `devenv` に含まれています。初期導入では **`tests/**` と新規追加した C/C++ ファイルだけ** を対象にします。
+
+```bash
+dev-format-cpp
+dev-lint-cpp
+```
+
+`dev-lint-cpp` は次をまとめて実行します。
+
+- 新規ファイルの Google 形式コメントチェック
+- 対象ファイルへの `clang-format --dry-run --Werror`
+- 対象 `.cpp` への `clang-tidy`
+
+`clang-tidy` は初期導入では範囲を絞り、`clang-analyzer` / `bugprone` 中心の bug-finding 寄りな check だけを有効にしています。ノイズを見ながら段階的に広げる前提です。
+
+新規 C++ ファイルには次を必須にしています。
+
+- ファイル先頭の overview コメント
+- 公開 API 宣言（公開関数、class/struct/enum など）の Google 形式コメント
 
 ### フォントの前提
 

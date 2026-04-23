@@ -1,0 +1,95 @@
+name: C++ Style
+
+on:
+  pull_request:
+    paths:
+      - ".clang-format"
+      - ".clang-tidy"
+      - ".github/workflows/cpp-style.yml"
+      - "cmake/**"
+      - "devenv.nix"
+      - "src/**"
+      - "tests/**"
+  push:
+    branches: [ "main" ]
+    paths:
+      - ".clang-format"
+      - ".clang-tidy"
+      - ".github/workflows/cpp-style.yml"
+      - "cmake/**"
+      - "devenv.nix"
+      - "src/**"
+      - "tests/**"
+  workflow_dispatch:
+
+jobs:
+  docs-and-format:
+    runs-on: ubuntu-24.04
+    env:
+      STM_STYLE_BEFORE: ${{ github.event.before }}
+      STM_STYLE_BASE_REF: ${{ github.base_ref }}
+      GITHUB_BASE_REF: ${{ github.base_ref }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: Check Google-style docs
+        run: uv run ./cmake/cpp_style.py check-docs --mode ci --repo-root .
+
+      - name: Check clang-format
+        run: uv run ./cmake/cpp_style.py check-format --mode ci --repo-root .
+
+  clang-tidy:
+    runs-on: macos-14
+    env:
+      ORBBEC_SDK_URL: https://github.com/orbbec/OrbbecSDK_v2/releases/download/v2.7.6/OrbbecSDK_v2.7.6_202602022028_d712cda_macOS.zip
+      STM_STYLE_BEFORE: ${{ github.event.before }}
+      STM_STYLE_BASE_REF: ${{ github.base_ref }}
+      GITHUB_BASE_REF: ${{ github.base_ref }}
+      VCPKG_TARGET_TRIPLET: arm64-osx
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install LLVM
+        run: |
+          brew install llvm
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+
+      - name: Bootstrap vcpkg
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg "$RUNNER_TEMP/vcpkg"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+          echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
+
+      - name: Download Orbbec SDK
+        run: |
+          sdk_zip="$RUNNER_TEMP/orbbec-sdk.zip"
+          sdk_dir="$RUNNER_TEMP/orbbec-sdk"
+          curl -L "$ORBBEC_SDK_URL" -o "$sdk_zip"
+          unzip -q "$sdk_zip" -d "$sdk_dir"
+          header_path="$(find "$sdk_dir" -mindepth 1 -maxdepth 4 -type f -path '*/include/libobsensor/ObSensor.hpp' -print -quit)"
+          if [ -z "$header_path" ]; then
+            echo "Failed to locate ObSensor.hpp in downloaded Orbbec SDK." >&2
+            exit 1
+          fi
+          sdk_root="$(cd "$(dirname "$header_path")/../.." && pwd)"
+          echo "ORBBEC_SDK_DIR=$sdk_root" >> "$GITHUB_ENV"
+
+      - name: Run clang-tidy on selected files
+        run: uv run ./cmake/cpp_style.py tidy --mode ci --repo-root . --build-dir build-style

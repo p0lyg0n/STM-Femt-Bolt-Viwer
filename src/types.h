@@ -1,5 +1,7 @@
 #pragma once
 
+#include "app_model.h"
+
 #include <libobsensor/ObSensor.hpp>
 
 #include <algorithm>
@@ -55,8 +57,6 @@ constexpr float kNearClipZ = 0.05f;
 constexpr float kFarClipZ = 30.0f;
 constexpr float kCameraBaseOffsetZ = -1.2f;
 constexpr float kPi = 3.1415926535f;
-constexpr float kDepthPseudoMinMm = 250.0f;
-constexpr float kDepthPseudoRangeMm = 4750.0f;
 constexpr int kMeshSamplingStep = 6;
 constexpr float kMeshMinDepthMeters = 0.12f;
 constexpr float kMeshMaxDepthMeters = 12.0f;
@@ -144,22 +144,6 @@ struct GpuMesh {
     std::vector<uint32_t> tris;
     int points = 0;
     bool hasData = false;
-};
-
-enum class PointRenderMode {
-    GpuMesh = 0,
-    GpuPoint = 1,
-    CpuPoint = 2,
-};
-
-// Stream sensor settings applied to ob::Pipeline on session start.
-// Changing these requires stopping and restarting the pipeline.
-struct StreamSettings {
-    int depthW = 640;
-    int depthH = 576;
-    int colorW = 1280;
-    int colorH = 720;
-    int fps    = 30;
 };
 
 // Per-camera view state (renamed from AppState).
@@ -250,19 +234,6 @@ struct CameraSession {
     float ldmTemp = 0.0f;
     bool tempReady = false;
     std::chrono::steady_clock::time_point lastTempPoll = std::chrono::steady_clock::now() - std::chrono::seconds(10);
-};
-
-struct UsbInfo {
-    std::string controllerId;
-    std::string controllerName;
-    std::string rootHub;
-    std::string portInfo;
-};
-
-struct SystemUsbTopology {
-    std::vector<std::string> controllers;
-    std::unordered_map<std::string, std::string> controllerNames;
-    std::unordered_map<std::string, UsbInfo> deviceMap;
 };
 
 struct AppRuntime {

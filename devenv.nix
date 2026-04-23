@@ -5,6 +5,7 @@ in
 {
   packages = [
     pkgs.cmake
+    pkgs.uv
     pkgs.ninja
     pkgs.curl
     pkgs.zip
@@ -12,6 +13,7 @@ in
     pkgs.gnutar
     pkgs.git
     pkgs.powershell
+    pkgs.clang-tools
   ];
 
   scripts = {
@@ -189,10 +191,26 @@ in
         ./scripts/dev-download-sdks.sh
       '';
     };
+
+    "dev-format-cpp" = {
+      description = "Format tests/** and newly added C++ files";
+      exec = ''
+        set -e -o pipefail
+        uv run ./cmake/cpp_style.py format --mode local --repo-root .
+      '';
+    };
+
+    "dev-lint-cpp" = {
+      description = "Run docs, format, and clang-tidy on tests/** and newly added C++ files";
+      exec = ''
+        set -e -o pipefail
+        uv run ./cmake/cpp_style.py lint --mode local --repo-root . --build-dir build-style
+      '';
+    };
   };
 
   enterShell = ''
     echo "STM Femto Bolt Viewer devenv loaded."
-    echo "Available commands: dev-doctor, dev-download-sdks, dev-build, dev-run, dev-package"
+    echo "Available commands: dev-doctor, dev-download-sdks, dev-build, dev-run, dev-package, dev-format-cpp, dev-lint-cpp"
   '';
 }

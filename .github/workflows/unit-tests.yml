@@ -1,0 +1,85 @@
+name: Unit Tests
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/unit-tests.yml"
+      - "CMakeLists.txt"
+      - "tests/**"
+      - "src/**"
+  push:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/unit-tests.yml"
+      - "CMakeLists.txt"
+      - "tests/**"
+      - "src/**"
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S . -B build-unit `
+            -DSTM_BUILD_APP=OFF `
+            -DBUILD_TESTING=ON
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake --build build-unit --config Debug
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ctest --test-dir build-unit --build-config Debug --output-on-failure
+
+      - name: Configure (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cmake -S . -B build-unit \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DSTM_BUILD_APP=OFF \
+            -DBUILD_TESTING=ON
+
+      - name: Build (Unix)
+        if: runner.os != 'Windows'
+        run: cmake --build build-unit
+
+      - name: Test (Unix)
+        if: runner.os != 'Windows'
+        run: ctest --test-dir build-unit --output-on-failure
+
+  coverage:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install LLVM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-coverage \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DSTM_BUILD_APP=OFF \
+            -DBUILD_TESTING=ON \
+            -DSTM_ENABLE_COVERAGE=ON
+
+      - name: Build coverage report
+        run: cmake --build build-coverage --target coverage
