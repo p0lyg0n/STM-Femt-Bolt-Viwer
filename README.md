@@ -201,7 +201,8 @@ devenv shell -- dev-lint-cpp
 ```
 
 ローカル SDK パスは `.env.local` で上書きできます（Windows 既定値: `C:\Program Files\OrbbecSDK 2.7.6`）。
-`dev-download-sdks` は `vcpkg` を `.devenv/sdks/vcpkg` にセットアップし、`vcpkg.json` に基づいて依存（現在は `glfw3`）をインストールします。`ORBBEC_SDK_URL` が設定されている場合は Orbbec SDK も `.devenv/sdks/orbbec` にダウンロードします。
+`dev-download-sdks` は `vcpkg` を `.devenv/sdks/vcpkg` にセットアップし、`vcpkg.json` に基づいて依存（現在は `glfw3`）をインストールします。`ORBBEC_SDK_URL` が設定されている場合は Orbbec SDK も `.devenv/sdks/orbbec` にダウンロードし、公式 archive は [scripts/orbbec-sdk-checksums.txt](scripts/orbbec-sdk-checksums.txt) の SHA-256 で検証します。
+custom / fork archive では `ORBBEC_SDK_SHA256` を指定できます。未指定でも download は続行しますが、その場合は checksum 未検証として警告を出します。公式 Orbbec release URL を使う場合は manifest か `ORBBEC_SDK_SHA256` が必須です。
 macOS / Linux では `dev-build` が `.devenv/sdks/orbbec/extracted` 以下の SDK を自動検出します。
 
 > `scripts/dev-build.ps1`（Windows）と `scripts/dev-build.sh`（macOS / Linux）は `VCPKG_ROOT`（未設定時は `.devenv/sdks/vcpkg`）を自動検出し、vcpkg toolchain を使って configure します。

@@ -13,6 +13,7 @@ on:
       - "scripts/dev-build.sh"
       - "scripts/dev-build.ps1"
       - "scripts/dev-download-sdks.sh"
+      - "scripts/orbbec-sdk-checksums.txt"
   push:
     branches: [ "main" ]
     paths:
@@ -26,6 +27,7 @@ on:
       - "scripts/dev-build.sh"
       - "scripts/dev-build.ps1"
       - "scripts/dev-download-sdks.sh"
+      - "scripts/orbbec-sdk-checksums.txt"
   workflow_dispatch:
 
 jobs:
@@ -38,16 +40,40 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Resolve Orbbec SDK checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest_path="scripts/orbbec-sdk-checksums.txt"
+          if [ ! -f "$manifest_path" ]; then
+            echo "Missing checksum manifest: $manifest_path" >&2
+            exit 1
+          fi
+          archive_name="${ORBBEC_SDK_URL##*/}"
+          checksum="$(awk -v target="$archive_name" '$2 == target { print $1; exit }' "$manifest_path")"
+          if [ -z "$checksum" ]; then
+            echo "Checksum not found for $archive_name in $manifest_path" >&2
+            exit 1
+          fi
+          echo "ORBBEC_SDK_SHA256=$checksum" >> "$GITHUB_ENV"
+
       - name: Bootstrap vcpkg
         run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg "$RUNNER_TEMP/vcpkg"
+          git clone https://github.com/microsoft/vcpkg "$RUNNER_TEMP/vcpkg"
           "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
 
       - name: Download Orbbec SDK
         run: |
           sdk_zip="$RUNNER_TEMP/orbbec-sdk.zip"
           sdk_dir="$RUNNER_TEMP/orbbec-sdk"
-          curl -L "$ORBBEC_SDK_URL" -o "$sdk_zip"
+          curl -fL --retry 3 "$ORBBEC_SDK_URL" -o "$sdk_zip"
+          actual_sha256="$(shasum -a 256 "$sdk_zip" | awk '{print $1}')"
+          if [ "$actual_sha256" != "$ORBBEC_SDK_SHA256" ]; then
+            echo "Orbbec SDK checksum mismatch." >&2
+            echo "expected: $ORBBEC_SDK_SHA256" >&2
+            echo "actual:   $actual_sha256" >&2
+            exit 1
+          fi
           unzip -q "$sdk_zip" -d "$sdk_dir"
           header_path="$(find "$sdk_dir" -mindepth 1 -maxdepth 4 -type f -path '*/include/libobsensor/ObSensor.hpp' -print -quit)"
           if [ -z "$header_path" ]; then
@@ -80,10 +106,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Resolve Orbbec SDK checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest_path="scripts/orbbec-sdk-checksums.txt"
+          if [ ! -f "$manifest_path" ]; then
+            echo "Missing checksum manifest: $manifest_path" >&2
+            exit 1
+          fi
+          archive_name="${ORBBEC_SDK_URL##*/}"
+          checksum="$(awk -v target="$archive_name" '$2 == target { print $1; exit }' "$manifest_path")"
+          if [ -z "$checksum" ]; then
+            echo "Checksum not found for $archive_name in $manifest_path" >&2
+            exit 1
+          fi
+          echo "ORBBEC_SDK_SHA256=$checksum" >> "$GITHUB_ENV"
+
       - name: Bootstrap vcpkg
         shell: pwsh
         run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg "$env:RUNNER_TEMP\vcpkg"
+          git clone https://github.com/microsoft/vcpkg "$env:RUNNER_TEMP\vcpkg"
           & "$env:RUNNER_TEMP\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
           "VCPKG_ROOT=$env:RUNNER_TEMP\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -92,7 +135,22 @@ jobs:
         run: |
           $sdkZip = Join-Path $env:RUNNER_TEMP "orbbec-sdk.zip"
           $sdkDir = Join-Path $env:RUNNER_TEMP "orbbec-sdk"
-          Invoke-WebRequest -Uri $env:ORBBEC_SDK_URL -OutFile $sdkZip
+          $maxAttempts = 3
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            try {
+              Invoke-WebRequest -Uri $env:ORBBEC_SDK_URL -OutFile $sdkZip
+              break
+            } catch {
+              if ($attempt -eq $maxAttempts) {
+                throw
+              }
+              Start-Sleep -Seconds (2 * $attempt)
+            }
+          }
+          $actualSha256 = (Get-FileHash -Path $sdkZip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualSha256 -ne $env:ORBBEC_SDK_SHA256.ToLowerInvariant()) {
+            throw "Orbbec SDK checksum mismatch. expected=$env:ORBBEC_SDK_SHA256 actual=$actualSha256"
+          }
           Expand-Archive -Path $sdkZip -DestinationPath $sdkDir -Force
           $header = Get-ChildItem -Path $sdkDir -Recurse -Filter ObSensor.hpp | Select-Object -First 1 -ExpandProperty FullName
           if ([string]::IsNullOrWhiteSpace($header)) {

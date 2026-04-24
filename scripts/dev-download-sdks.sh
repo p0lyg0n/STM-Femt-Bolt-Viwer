@@ -4,6 +4,53 @@ set -euo pipefail
 sdk_root=".devenv/sdks"
 mkdir -p "$sdk_root"
 
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+orbbec_checksum_manifest="$script_dir/orbbec-sdk-checksums.txt"
+
+known_orbbec_sha256() {
+  local archive_name="$1"
+  if [ ! -f "$orbbec_checksum_manifest" ]; then
+    return 1
+  fi
+  awk -v target="$archive_name" '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    $2 == target { print $1; found=1; exit }
+    END { if (!found) exit 1 }
+  ' "$orbbec_checksum_manifest"
+}
+
+is_official_orbbec_release_url() {
+  case "$1" in
+    https://github.com/orbbec/OrbbecSDK_v2/releases/download/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+    return 0
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+    return 0
+  fi
+  if command -v pwsh >/dev/null 2>&1; then
+    HASH_TARGET_PATH="$1" pwsh -NoLogo -NoProfile -Command "(Get-FileHash -Algorithm SHA256 $env:HASH_TARGET_PATH).Hash.ToLowerInvariant()" | tr -d '\r'
+    return 0
+  fi
+  if command -v powershell.exe >/dev/null 2>&1; then
+    HASH_TARGET_PATH="$1" powershell.exe -NoProfile -Command "(Get-FileHash -Algorithm SHA256 $env:HASH_TARGET_PATH).Hash.ToLowerInvariant()" | tr -d '\r'
+    return 0
+  fi
+  echo "[dev-download-sdks] Unable to find a SHA-256 tool (sha256sum/shasum/pwsh/Get-FileHash)." >&2
+  return 1
+}
+
 host_os_raw="$(uname -s 2>/dev/null || printf 'unknown')"
 host_arch_raw="$(uname -m 2>/dev/null || printf 'unknown')"
 
@@ -26,11 +73,17 @@ echo "[dev-download-sdks] sdk_root=$sdk_root"
 vcpkg_dir="$sdk_root/vcpkg"
 if [ -d "$vcpkg_dir/.git" ]; then
   echo "[dev-download-sdks] vcpkg already exists: $vcpkg_dir"
-  git -C "$vcpkg_dir" fetch --depth 1 origin master
+  if [ "$(git -C "$vcpkg_dir" rev-parse --is-shallow-repository 2>/dev/null || echo false)" = "true" ]; then
+    echo "[dev-download-sdks] converting shallow vcpkg checkout to full history for builtin-baseline support"
+    git -C "$vcpkg_dir" fetch --unshallow origin
+  else
+    git -C "$vcpkg_dir" fetch origin
+  fi
+  git -C "$vcpkg_dir" fetch origin master
   git -C "$vcpkg_dir" checkout -q FETCH_HEAD
 else
   echo "[dev-download-sdks] downloading vcpkg..."
-  git clone --depth 1 https://github.com/microsoft/vcpkg.git "$vcpkg_dir"
+  git clone https://github.com/microsoft/vcpkg.git "$vcpkg_dir"
 fi
 
 is_windows=0
@@ -119,6 +172,7 @@ orbbec_url="${ORBBEC_SDK_URL:-}"
 if [ -z "$orbbec_url" ]; then
   echo "[dev-download-sdks] ORBBEC_SDK_URL is not set, so Orbbec SDK download is skipped."
   echo "[dev-download-sdks] If needed, set ORBBEC_SDK_URL in .env.local and rerun."
+  echo "[dev-download-sdks] Custom archives should also set ORBBEC_SDK_SHA256."
   echo "[dev-download-sdks] Examples (v2.7.6):"
   echo "[dev-download-sdks]   macOS:   https://github.com/orbbec/OrbbecSDK_v2/releases/download/v2.7.6/OrbbecSDK_v2.7.6_202602022028_d712cda_macOS.zip"
   echo "[dev-download-sdks]   Windows: https://github.com/orbbec/OrbbecSDK_v2/releases/download/v2.7.6/OrbbecSDK_v2.7.6_202602022027_d712cda_win_x64.zip"
@@ -130,9 +184,37 @@ orbbec_dir="$sdk_root/orbbec"
 mkdir -p "$orbbec_dir"
 archive_name="$(basename "$orbbec_url")"
 archive_path="$orbbec_dir/$archive_name"
+expected_sha256="${ORBBEC_SDK_SHA256:-}"
+if [ -z "$expected_sha256" ]; then
+  expected_sha256="$(known_orbbec_sha256 "$archive_name" || true)"
+fi
+
+if [ -z "$expected_sha256" ]; then
+  if is_official_orbbec_release_url "$orbbec_url"; then
+    echo "[dev-download-sdks] No SHA-256 checksum is known for official Orbbec release archive $archive_name." >&2
+    echo "[dev-download-sdks] Update $orbbec_checksum_manifest or set ORBBEC_SDK_SHA256." >&2
+    exit 1
+  fi
+  echo "[dev-download-sdks] Warning: no SHA-256 checksum is known for custom archive $archive_name." >&2
+  echo "[dev-download-sdks] Continuing without checksum verification. Set ORBBEC_SDK_SHA256 to verify custom archives." >&2
+else
+  echo "[dev-download-sdks] expecting sha256=$expected_sha256"
+fi
 
 echo "[dev-download-sdks] downloading Orbbec SDK archive..."
 curl -fL --retry 3 "$orbbec_url" -o "$archive_path"
+if [ -n "$expected_sha256" ]; then
+  actual_sha256="$(sha256_file "$archive_path")"
+  if [ "$actual_sha256" != "$expected_sha256" ]; then
+    echo "[dev-download-sdks] SHA-256 mismatch for $archive_name" >&2
+    echo "[dev-download-sdks] expected: $expected_sha256" >&2
+    echo "[dev-download-sdks] actual:   $actual_sha256" >&2
+    exit 1
+  fi
+  echo "[dev-download-sdks] SHA-256 verified for $archive_name"
+else
+  echo "[dev-download-sdks] checksum verification skipped for $archive_name"
+fi
 
 case "$archive_name" in
   *.zip)
