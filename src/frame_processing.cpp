@@ -1,9 +1,25 @@
 #include "frame_processing.h"
+#include "pixel_conversion.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <vector>
+
+namespace {
+
+RawFrameFormat toRawFrameFormat(OBFormat format) {
+    switch(format) {
+        case OB_FORMAT_RGB: return RawFrameFormat::Rgb;
+        case OB_FORMAT_BGR: return RawFrameFormat::Bgr;
+        case OB_FORMAT_Y8: return RawFrameFormat::Y8;
+        case OB_FORMAT_Y16: return RawFrameFormat::Y16;
+        case OB_FORMAT_Z16: return RawFrameFormat::Z16;
+        default: return RawFrameFormat::Unsupported;
+    }
+}
+
+} // namespace
 
 bool convertColorFrameToRgb(const std::shared_ptr<ob::VideoFrame> &frame, std::vector<uint8_t> &out, int &w, int &h) {
     if(!frame) return false;
@@ -12,57 +28,18 @@ bool convertColorFrameToRgb(const std::shared_ptr<ob::VideoFrame> &frame, std::v
     if(w <= 0 || h <= 0) return false;
 
     const uint8_t *src = reinterpret_cast<const uint8_t *>(frame->data());
-    if(!src) return false;
-    out.resize(static_cast<size_t>(w) * static_cast<size_t>(h) * 3u);
-
-    if(frame->format() == OB_FORMAT_RGB) {
-        std::copy(src, src + out.size(), out.begin());
-        return true;
-    }
-    if(frame->format() == OB_FORMAT_BGR) {
-        for(size_t i = 0; i + 2 < out.size(); i += 3) {
-            out[i + 0] = src[i + 2];
-            out[i + 1] = src[i + 1];
-            out[i + 2] = src[i + 0];
-        }
-        return true;
-    }
-    return false;
+    return convertColorPixelsToRgb(src, toRawFrameFormat(frame->format()), w, h, out);
 }
 
 bool convertDepthFrameToPseudoRgb(const std::shared_ptr<ob::DepthFrame> &frame, std::vector<uint8_t> &out, int &w, int &h) {
     if(!frame) return false;
-    if(frame->format() != OB_FORMAT_Y16 && frame->format() != OB_FORMAT_Z16) return false;
     w = frame->width();
     h = frame->height();
     if(w <= 0 || h <= 0) return false;
 
     const uint16_t *src = reinterpret_cast<const uint16_t *>(frame->data());
-    if(!src) return false;
-    const float scaleMm = frame->getValueScale() > 0.0f ? frame->getValueScale() : 1.0f;
-    out.resize(static_cast<size_t>(w) * static_cast<size_t>(h) * 3u);
-
-    for(int y = 0; y < h; ++y) {
-        for(int x = 0; x < w; ++x) {
-            const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x);
-            const size_t rgb = idx * 3u;
-            float zMm = src[idx] * scaleMm;
-            if(zMm <= 0.0f) {
-                out[rgb + 0] = 0;
-                out[rgb + 1] = 0;
-                out[rgb + 2] = 0;
-                continue;
-            }
-            float t = std::clamp((zMm - kDepthPseudoMinMm) / kDepthPseudoRangeMm, 0.0f, 1.0f);
-            const uint8_t r = static_cast<uint8_t>(255.0f * (1.0f - t));
-            const uint8_t g = static_cast<uint8_t>(255.0f * std::abs(0.5f - t) * 2.0f);
-            const uint8_t b = static_cast<uint8_t>(255.0f * t);
-            out[rgb + 0] = r;
-            out[rgb + 1] = g;
-            out[rgb + 2] = b;
-        }
-    }
-    return true;
+    const float scaleMm = frame->getValueScale();
+    return convertDepthPixelsToPseudoRgb(src, toRawFrameFormat(frame->format()), w, h, scaleMm, out);
 }
 
 bool convertIrFrameToGrayscaleRgb(const std::shared_ptr<ob::VideoFrame> &frame, std::vector<uint8_t> &out, int &w, int &h) {
@@ -70,39 +47,7 @@ bool convertIrFrameToGrayscaleRgb(const std::shared_ptr<ob::VideoFrame> &frame, 
     w = frame->width();
     h = frame->height();
     if(w <= 0 || h <= 0) return false;
-
-    // Femto Bolt IR is Y16 (16-bit grayscale). Map 0..4095 -> 0..255 with saturation;
-    // typical reflected-IR signal at 0.5–3 m falls well inside that range and looks
-    // close to a black-and-white IR photo. A fixed scale is preferred over auto-gain
-    // to avoid frame-to-frame flicker.
-    if(frame->format() == OB_FORMAT_Y16) {
-        const uint16_t *src = reinterpret_cast<const uint16_t *>(frame->data());
-        if(!src) return false;
-        out.resize(static_cast<size_t>(w) * static_cast<size_t>(h) * 3u);
-        const size_t n = static_cast<size_t>(w) * static_cast<size_t>(h);
-        for(size_t i = 0; i < n; ++i) {
-            const uint32_t v = src[i] >> 4;
-            const uint8_t g = static_cast<uint8_t>(v > 255 ? 255 : v);
-            out[i * 3u + 0] = g;
-            out[i * 3u + 1] = g;
-            out[i * 3u + 2] = g;
-        }
-        return true;
-    }
-    if(frame->format() == OB_FORMAT_Y8) {
-        const uint8_t *src = reinterpret_cast<const uint8_t *>(frame->data());
-        if(!src) return false;
-        out.resize(static_cast<size_t>(w) * static_cast<size_t>(h) * 3u);
-        const size_t n = static_cast<size_t>(w) * static_cast<size_t>(h);
-        for(size_t i = 0; i < n; ++i) {
-            const uint8_t g = src[i];
-            out[i * 3u + 0] = g;
-            out[i * 3u + 1] = g;
-            out[i * 3u + 2] = g;
-        }
-        return true;
-    }
-    return false;
+    return convertIrPixelsToGrayscaleRgb(frame->data(), toRawFrameFormat(frame->format()), w, h, out);
 }
 
 bool rebuildMeshFromAlignedDepthColor(

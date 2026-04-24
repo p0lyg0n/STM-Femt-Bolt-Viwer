@@ -1,4 +1,5 @@
 build/
+build-*/
 Log/
 release/
 _imgui_cache/
@@ -12,3 +13,15 @@ _tmp_orbbec_sample_viewer/
 
 # GLFW is built from source via add_subdirectory; its output lib lives here but must not be committed.
 third_party/glfw/lib/glfw3.lib
+
+# devenv / direnv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+.direnv/
+
+# local environment overrides
+.env.local
+
+# vcpkg manifest artifacts
+vcpkg_installed/

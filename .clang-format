@@ -1,0 +1,8 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 100
+SortIncludes: Never
+AccessModifierOffset: -4
+SpaceBeforeParens: Never
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortEnumsOnASingleLine: false

@@ -1,0 +1,136 @@
+name: Verify SDK Download
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which SDK archive set to verify"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - macos
+          - windows
+          - linux-x86_64
+          - linux-arm64
+
+jobs:
+  select-targets:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Build matrix from dispatch target
+        id: set-matrix
+        env:
+          SDK_TARGET: ${{ github.event.inputs.target }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+
+          target = os.environ["SDK_TARGET"]
+          entries = [
+              {
+                  "key": "macos",
+                  "runs-on": "macos-14",
+                  "sdk_url": "https://github.com/orbbec/OrbbecSDK_v2/releases/download/v2.7.6/OrbbecSDK_v2.7.6_202602022028_d712cda_macOS.zip",
+                  "vcpkg_triplet": "arm64-osx",
+                  "shell": "bash",
+              },
+              {
+                  "key": "windows",
+                  "runs-on": "windows-2022",
+                  "sdk_url": "https://github.com/orbbec/OrbbecSDK_v2/releases/download/v2.7.6/OrbbecSDK_v2.7.6_202602022027_d712cda_win_x64.zip",
+                  "vcpkg_triplet": "x64-windows",
+                  "shell": "bash",
+              },
+              {
+                  "key": "linux-x86_64",
+                  "runs-on": "ubuntu-24.04",
+                  "sdk_url": "https://github.com/orbbec/OrbbecSDK_v2/releases/download/v2.7.6/OrbbecSDK_v2.7.6_202602021228_d712cda_linux_x86_64.zip",
+                  "vcpkg_triplet": "x64-linux",
+                  "shell": "bash",
+              },
+              {
+                  "key": "linux-arm64",
+                  "runs-on": "ubuntu-24.04",
+                  "sdk_url": "https://github.com/orbbec/OrbbecSDK_v2/releases/download/v2.7.6/OrbbecSDK_v2.7.6_202602021228_d712cda_linux_arm64.zip",
+                  "vcpkg_triplet": "arm64-linux",
+                  "shell": "bash",
+              },
+          ]
+
+          if target == "all":
+              selected = entries
+          else:
+              selected = [entry for entry in entries if entry["key"] == target]
+
+          print("matrix=" + json.dumps(selected, separators=(",", ":")))
+          PY
+
+  verify-sdk-download:
+    needs: select-targets
+    if: ${{ needs.select-targets.outputs.matrix != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.select-targets.outputs.matrix) }}
+    runs-on: ${{ matrix.runs-on }}
+    env:
+      ORBBEC_SDK_URL: ${{ matrix.sdk_url }}
+      VCPKG_TARGET_TRIPLET: ${{ matrix.vcpkg_triplet }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve Orbbec SDK checksum
+        run: |
+          set -euo pipefail
+          if ! checksum="$(bash ./scripts/resolve-orbbec-checksum.sh "$ORBBEC_SDK_URL")"; then
+            echo "Checksum not found for $ORBBEC_SDK_URL" >&2
+            exit 1
+          fi
+          echo "ORBBEC_SDK_SHA256=$checksum" >> "$GITHUB_ENV"
+
+      - name: Make scripts executable
+        if: runner.os != 'Windows'
+        run: chmod +x scripts/dev-download-sdks.sh
+
+      - name: Run dev-download-sdks
+        run: ./scripts/dev-download-sdks.sh
+
+      - name: Verify extracted SDK layout (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          header_path="$(find .devenv/sdks/orbbec/extracted -type f -path '*/include/libobsensor/ObSensor.hpp' -print -quit)"
+          config_path="$(find .devenv/sdks/orbbec/extracted -type f -name 'OrbbecSDKConfig.cmake' -print -quit)"
+          runtime_path="$(find .devenv/sdks/orbbec/extracted -type f \( -name 'libOrbbecSDK*.dylib' -o -name 'libOrbbecSDK*.so*' \) -print -quit)"
+          test -n "$header_path"
+          test -n "$config_path"
+          test -n "$runtime_path"
+          echo "header_path=$header_path"
+          echo "config_path=$config_path"
+          echo "runtime_path=$runtime_path"
+
+      - name: Verify extracted SDK layout (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $header = Get-ChildItem -Path .devenv/sdks/orbbec/extracted -Recurse -Filter ObSensor.hpp | Select-Object -First 1 -ExpandProperty FullName
+          $config = Get-ChildItem -Path .devenv/sdks/orbbec/extracted -Recurse -Filter OrbbecSDKConfig.cmake | Select-Object -First 1 -ExpandProperty FullName
+          $importLib = Get-ChildItem -Path .devenv/sdks/orbbec/extracted -Recurse -Filter OrbbecSDK.lib | Select-Object -First 1 -ExpandProperty FullName
+          $runtimeDll = Get-ChildItem -Path .devenv/sdks/orbbec/extracted -Recurse -Filter OrbbecSDK.dll | Select-Object -First 1 -ExpandProperty FullName
+          if ([string]::IsNullOrWhiteSpace($header)) { throw "ObSensor.hpp not found" }
+          if ([string]::IsNullOrWhiteSpace($config)) { throw "OrbbecSDKConfig.cmake not found" }
+          if ([string]::IsNullOrWhiteSpace($importLib)) { throw "OrbbecSDK.lib not found" }
+          if ([string]::IsNullOrWhiteSpace($runtimeDll)) { throw "OrbbecSDK.dll not found" }
+          Write-Host "header=$header"
+          Write-Host "config=$config"
+          Write-Host "importLib=$importLib"
+          Write-Host "runtimeDll=$runtimeDll"

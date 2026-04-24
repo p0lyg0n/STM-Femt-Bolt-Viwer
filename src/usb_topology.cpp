@@ -1,7 +1,6 @@
 #include "usb_topology.h"
 #include "camera_session.h"
 
-#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdio>
@@ -102,62 +101,6 @@ void publishUsbTopology(AppRuntime &runtime, const SystemUsbTopology &usbTopolog
 // ---------------------------------------------------------------------------
 // Public functions
 // ---------------------------------------------------------------------------
-
-std::string normalizeUsbControllerName(std::string name) {
-    auto replaceAll = [&name](const std::string &from, const std::string &to) {
-        if(from.empty()) return;
-        size_t pos = 0;
-        while((pos = name.find(from, pos)) != std::string::npos) {
-            name.replace(pos, from.size(), to);
-            pos += to.size();
-        }
-    };
-
-    replaceAll("eXtensible Host Controller", "xHCI");
-    replaceAll(" - 1.10 (Microsoft)", "");
-
-    auto trimLeft = [](std::string &s) {
-        while(!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) {
-            s.erase(s.begin());
-        }
-    };
-    auto trimRight = [](std::string &s) {
-        while(!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) {
-            s.pop_back();
-        }
-    };
-    auto collapseSpaces = [](std::string &s) {
-        std::string out;
-        out.reserve(s.size());
-        bool prevSpace = false;
-        for(unsigned char ch : s) {
-            const bool isSpace = std::isspace(ch) != 0;
-            if(isSpace) {
-                if(!prevSpace) out.push_back(' ');
-            } else {
-                out.push_back(static_cast<char>(ch));
-            }
-            prevSpace = isSpace;
-        }
-        s.swap(out);
-    };
-
-    trimLeft(name);
-    trimRight(name);
-    collapseSpaces(name);
-    return name;
-}
-
-std::string formatControllerDisplayName(const SystemUsbTopology &usbMap, const std::string &controllerId, const std::string &fallbackName) {
-    if(controllerId.empty()) return fallbackName.empty() ? "Unknown Controller" : fallbackName;
-    auto it = std::find(usbMap.controllers.begin(), usbMap.controllers.end(), controllerId);
-    int controllerIndex = (it == usbMap.controllers.end()) ? -1 : static_cast<int>(std::distance(usbMap.controllers.begin(), it)) + 1;
-    const std::string name = fallbackName.empty() ? "Unknown Controller" : fallbackName;
-    if(controllerIndex > 0) {
-        return "#" + std::to_string(controllerIndex) + " " + name;
-    }
-    return name;
-}
 
 void startUsbTopologyWorker(ob::Context &context, AppRuntime &runtime) {
     runtime.usbTopologyStop.store(false);
@@ -444,4 +387,3 @@ void restartApplication() {
     std::exit(0);
 #endif
 }
-

@@ -1,0 +1,12 @@
+Checks: >
+  -*,
+  clang-analyzer-*,
+  -clang-analyzer-optin.core.EnumCastOutOfRange,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-reserved-identifier,
+  misc-const-correctness,
+  readability-braces-around-statements,
+  readability-implicit-bool-conversion
+HeaderFilterRegex: '(^|.*/)(src|tests)/'
+FormatStyle: file

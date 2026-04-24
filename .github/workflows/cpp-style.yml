@@ -1,0 +1,73 @@
+name: C++ Style
+
+on:
+  pull_request:
+    paths:
+      - ".clang-format"
+      - ".clang-tidy"
+      - ".github/workflows/cpp-style.yml"
+      - "cmake/**"
+      - "devenv.nix"
+      - "src/**"
+      - "tests/**"
+  push:
+    branches: [ "main" ]
+    paths:
+      - ".clang-format"
+      - ".clang-tidy"
+      - ".github/workflows/cpp-style.yml"
+      - "cmake/**"
+      - "devenv.nix"
+      - "src/**"
+      - "tests/**"
+  workflow_dispatch:
+
+jobs:
+  docs-and-format:
+    runs-on: ubuntu-24.04
+    env:
+      STM_STYLE_BEFORE: ${{ github.event.before }}
+      STM_STYLE_BASE_REF: ${{ github.base_ref }}
+      GITHUB_BASE_REF: ${{ github.base_ref }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: Check Google-style docs
+        run: uv run ./cmake/cpp_style.py check-docs --mode ci --repo-root .
+
+      - name: Check clang-format
+        run: uv run ./cmake/cpp_style.py check-format --mode ci --repo-root .
+
+  clang-tidy:
+    runs-on: ubuntu-24.04
+    env:
+      STM_STYLE_BEFORE: ${{ github.event.before }}
+      STM_STYLE_BASE_REF: ${{ github.base_ref }}
+      GITHUB_BASE_REF: ${{ github.base_ref }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install clang-tidy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy
+
+      - name: Run clang-tidy on selected files
+        run: uv run ./cmake/cpp_style.py tidy --mode ci --repo-root . --build-dir build-style
