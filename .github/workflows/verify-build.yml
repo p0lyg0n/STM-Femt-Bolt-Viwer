@@ -13,6 +13,7 @@ on:
       - "scripts/dev-build.sh"
       - "scripts/dev-build.ps1"
       - "scripts/dev-download-sdks.sh"
+      - "scripts/resolve-orbbec-checksum.sh"
       - "scripts/orbbec-sdk-checksums.txt"
   push:
     branches: [ "main" ]
@@ -27,6 +28,7 @@ on:
       - "scripts/dev-build.sh"
       - "scripts/dev-build.ps1"
       - "scripts/dev-download-sdks.sh"
+      - "scripts/resolve-orbbec-checksum.sh"
       - "scripts/orbbec-sdk-checksums.txt"
   workflow_dispatch:
 
@@ -44,15 +46,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          manifest_path="scripts/orbbec-sdk-checksums.txt"
-          if [ ! -f "$manifest_path" ]; then
-            echo "Missing checksum manifest: $manifest_path" >&2
-            exit 1
-          fi
-          archive_name="${ORBBEC_SDK_URL##*/}"
-          checksum="$(awk -v target="$archive_name" '$2 == target { print $1; exit }' "$manifest_path")"
-          if [ -z "$checksum" ]; then
-            echo "Checksum not found for $archive_name in $manifest_path" >&2
+          if ! checksum="$(bash ./scripts/resolve-orbbec-checksum.sh "$ORBBEC_SDK_URL")"; then
+            echo "Checksum not found for $ORBBEC_SDK_URL" >&2
             exit 1
           fi
           echo "ORBBEC_SDK_SHA256=$checksum" >> "$GITHUB_ENV"
@@ -110,15 +105,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          manifest_path="scripts/orbbec-sdk-checksums.txt"
-          if [ ! -f "$manifest_path" ]; then
-            echo "Missing checksum manifest: $manifest_path" >&2
-            exit 1
-          fi
-          archive_name="${ORBBEC_SDK_URL##*/}"
-          checksum="$(awk -v target="$archive_name" '$2 == target { print $1; exit }' "$manifest_path")"
-          if [ -z "$checksum" ]; then
-            echo "Checksum not found for $archive_name in $manifest_path" >&2
+          if ! checksum="$(bash ./scripts/resolve-orbbec-checksum.sh "$ORBBEC_SDK_URL")"; then
+            echo "Checksum not found for $ORBBEC_SDK_URL" >&2
             exit 1
           fi
           echo "ORBBEC_SDK_SHA256=$checksum" >> "$GITHUB_ENV"

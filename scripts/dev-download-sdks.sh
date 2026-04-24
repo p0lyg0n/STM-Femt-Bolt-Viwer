@@ -6,17 +6,14 @@ mkdir -p "$sdk_root"
 
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 orbbec_checksum_manifest="$script_dir/orbbec-sdk-checksums.txt"
+orbbec_checksum_resolver="$script_dir/resolve-orbbec-checksum.sh"
 
 known_orbbec_sha256() {
   local archive_name="$1"
-  if [ ! -f "$orbbec_checksum_manifest" ]; then
+  if [ ! -f "$orbbec_checksum_resolver" ]; then
     return 1
   fi
-  awk -v target="$archive_name" '
-    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
-    $2 == target { print $1; found=1; exit }
-    END { if (!found) exit 1 }
-  ' "$orbbec_checksum_manifest"
+  bash "$orbbec_checksum_resolver" "$archive_name"
 }
 
 is_official_orbbec_release_url() {
