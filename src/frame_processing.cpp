@@ -38,7 +38,7 @@ bool convertDepthFrameToPseudoRgb(const std::shared_ptr<ob::DepthFrame> &frame, 
     if(w <= 0 || h <= 0) return false;
 
     const uint16_t *src = reinterpret_cast<const uint16_t *>(frame->data());
-    const float scaleMm = frame->getValueScale() > 0.0f ? frame->getValueScale() : 1.0f;
+    const float scaleMm = frame->getValueScale();
     return convertDepthPixelsToPseudoRgb(src, toRawFrameFormat(frame->format()), w, h, scaleMm, out);
 }
 

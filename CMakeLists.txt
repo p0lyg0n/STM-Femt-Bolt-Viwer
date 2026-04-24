@@ -41,7 +41,7 @@ if(BUILD_TESTING)
     tests/unit_tests.cpp
   )
   target_link_libraries(stm_unit_tests PRIVATE stm_core Catch2::Catch2WithMain)
-  catch_discover_tests(stm_unit_tests)
+  catch_discover_tests(stm_unit_tests PROPERTIES RUN_SERIAL TRUE)
 endif()
 
 if(STM_ENABLE_COVERAGE)
@@ -100,11 +100,14 @@ if(STM_BUILD_APP)
   include(FetchContent)
   set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/_imgui_cache" CACHE PATH "" FORCE)
   # Keep the downloaded Dear ImGui source checkout, but drop generated subbuild state
-  # so the cache can be reused across different absolute checkout paths.
-  file(REMOVE_RECURSE
-    "${FETCHCONTENT_BASE_DIR}/imgui-subbuild"
-    "${FETCHCONTENT_BASE_DIR}/imgui-build"
-  )
+  # only when this checkout path changes, otherwise incremental configure gets slower.
+  if(DEFINED STM_IMGUI_CACHE_SOURCE_DIR AND NOT STM_IMGUI_CACHE_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    file(REMOVE_RECURSE
+      "${FETCHCONTENT_BASE_DIR}/imgui-subbuild"
+      "${FETCHCONTENT_BASE_DIR}/imgui-build"
+    )
+  endif()
+  set(STM_IMGUI_CACHE_SOURCE_DIR "${CMAKE_SOURCE_DIR}" CACHE INTERNAL "Absolute source path that initialized the ImGui cache" FORCE)
   FetchContent_Declare(imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
     GIT_TAG        v1.91.6
