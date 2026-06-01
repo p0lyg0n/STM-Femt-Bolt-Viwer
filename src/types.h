@@ -64,8 +64,11 @@ constexpr int kCpuPreviewW = 640;
 constexpr int kCpuPreviewH = 360;
 constexpr int kCpuFallbackTargetPoints = 6000;
 constexpr float kGridY = -0.55f;
-constexpr float kGridHalfExtent = 1.2f;
-constexpr float kGridStep = 0.1f;
+// Reference floor grid. Enlarged so a leveled, grid-centered room floor fits
+// inside it (a Femto Bolt at ~180cm sees a few metres of floor). Major lines
+// every 0.5 m (see drawPointPane), cells every kGridStep.
+constexpr float kGridHalfExtent = 3.0f;
+constexpr float kGridStep = 0.25f;
 constexpr float kAxisLength = 0.5f;
 constexpr int kSidebarW = 360;
 constexpr int kSidebarPad = 12;
@@ -152,6 +155,16 @@ enum class PointRenderMode {
     CpuPoint = 2,
 };
 
+// Floor auto-leveling reference. The camera is physically mounted at an angle,
+// so its point cloud renders tilted vs. the reference grid. We can rotate each
+// cloud upright either by fitting the floor plane from the points (robust, no
+// extra hardware) or by reading the accelerometer's gravity vector.
+enum class LevelMode {
+    Off   = 0,
+    Floor = 1,  // RANSAC-fit the dominant ~horizontal plane and stand it level
+    Imu   = 2,  // align the accelerometer's gravity direction to vertical
+};
+
 // Stream sensor settings applied to ob::Pipeline on session start.
 // Changing these requires stopping and restarting the pipeline.
 struct StreamSettings {
@@ -168,6 +181,14 @@ struct CameraViewState {
     MouseControl mouse;
     GpuMesh mesh;
     PointRenderMode pointMode = PointRenderMode::GpuMesh;
+    // Floor-leveling correction applied ONLY to the point cloud (not the
+    // reference grid) just before it is drawn. Column-major 4x4 so it can be
+    // handed straight to glMultMatrixf; identity when not leveled. levelEnabled
+    // mirrors the global LevelMode being non-Off; levelOk is true once a valid
+    // correction was computed (floor found / IMU ready).
+    float levelMat[16] = {1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1};
+    bool levelEnabled = false;
+    bool levelOk = false;
     bool wasMKeyDown = false;
     bool wasRKeyDown = false;
     int framebufferW = kInitWinW;
@@ -243,6 +264,12 @@ struct CameraSession {
     OBAccelValue lastAccel = {};
     OBGyroValue lastGyro = {};
     bool imuReady = false;
+    // Rotation mapping an accelerometer-frame vector into the camera optical
+    // frame (row-major 3x3), taken from the SDK's IMU->optical extrinsic. The
+    // Femto Bolt IMU axes are NOT the optical axes, so gravity must be rotated
+    // by this before it can level the cloud. Identity until the extrinsic loads.
+    float accelToOptRot[9] = {1, 0, 0,  0, 1, 0,  0, 0, 1};
+    bool  accelExtrinsicReady = false;
 
     std::mutex tempMutex;
     float cpuTemp = 0.0f;
@@ -270,6 +297,15 @@ struct AppRuntime {
     int framebufferW = kInitWinW;
     int framebufferH = kInitWinH;
     int activeSessionIndex = 0;
+    // >=0 : show ONLY that camera's point cloud filling the whole window
+    // (solo). -1 : normal multi-camera grid layout. Toggled by the solo overlay.
+    int soloSessionIndex = -1;
+    // Floor auto-leveling: applies a per-camera upright rotation to each point
+    // cloud. Floor-fit is recomputed on demand (button / mode switch) via
+    // levelRecomputeRequested; IMU mode refreshes every frame from the latest
+    // accelerometer reading.
+    LevelMode levelMode = LevelMode::Off;
+    bool levelRecomputeRequested = false;
     mutable std::mutex usbTopologyMutex;
     SystemUsbTopology usbTopology;
     std::unordered_map<std::string, int> controllerUsage;

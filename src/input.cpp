@@ -1,6 +1,8 @@
 #include "input.h"
+#include "frame_processing.h"
 
 #include <algorithm>
+#include <mutex>
 
 #include <imgui_impl_glfw.h>
 #include <imgui.h>
@@ -29,6 +31,16 @@ void onMouseButton(GLFWwindow *window, int button, int action, int mods) {
     }
     double x = 0.0, y = 0.0;
     glfwGetCursorPos(window, &x, &y);
+    // In solo mode the whole window is the chosen camera's point pane.
+    if(runtime->soloSessionIndex >= 0 && runtime->soloSessionIndex < static_cast<int>(runtime->sessions.size())) {
+        runtime->activeSessionIndex = runtime->soloSessionIndex;
+        auto &session = *runtime->sessions[static_cast<size_t>(runtime->soloSessionIndex)];
+        if(button == GLFW_MOUSE_BUTTON_LEFT) session.viewState.mouse.rotating = true;
+        if(button == GLFW_MOUSE_BUTTON_RIGHT) session.viewState.mouse.panning = true;
+        session.viewState.mouse.lastX = x;
+        session.viewState.mouse.lastY = y;
+        return;
+    }
     const int sessionIndex = sessionIndexFromCursorPos(*runtime, x, y);
     if(sessionIndex < 0) return;
     runtime->activeSessionIndex = sessionIndex;
@@ -72,9 +84,14 @@ void onScroll(GLFWwindow *window, double xoffset, double yoffset) {
     if(!runtime || runtime->sessions.empty()) return;
     double x = 0.0, y = 0.0;
     glfwGetCursorPos(window, &x, &y);
-    const int sessionIndex = sessionIndexFromCursorPos(*runtime, x, y);
-    if(sessionIndex < 0) return;
-    if(!isCursorInsideSessionPointPane(*runtime, static_cast<size_t>(sessionIndex), x, y)) return;
+    int sessionIndex;
+    if(runtime->soloSessionIndex >= 0 && runtime->soloSessionIndex < static_cast<int>(runtime->sessions.size())) {
+        sessionIndex = runtime->soloSessionIndex;  // whole window = solo camera's pane
+    } else {
+        sessionIndex = sessionIndexFromCursorPos(*runtime, x, y);
+        if(sessionIndex < 0) return;
+        if(!isCursorInsideSessionPointPane(*runtime, static_cast<size_t>(sessionIndex), x, y)) return;
+    }
     auto &session = *runtime->sessions[static_cast<size_t>(sessionIndex)];
     const float zoomRatio = 1.0f + static_cast<float>(yoffset) * kZoomStepScale;
     session.viewState.view.zoom = std::clamp(session.viewState.view.zoom * zoomRatio, kZoomMin, kZoomMax);
@@ -110,4 +127,74 @@ void resetAllSessionsView(AppRuntime &runtime) {
     for(auto &s : runtime.sessions) {
         if(s) s->viewState.view = ViewerControl{};
     }
+}
+
+void setAllSessionsView(AppRuntime &runtime, float yawDeg, float pitchDeg) {
+    pitchDeg = std::clamp(pitchDeg, -kPitchClampDeg, kPitchClampDeg);
+    for(auto &s : runtime.sessions) {
+        if(!s) continue;
+        ViewerControl &v = s->viewState.view;
+        v.yawDeg = yawDeg;
+        v.pitchDeg = pitchDeg;
+        v.panX = 0.0f;
+        v.panY = 0.0f;
+        // zoom is preserved so presets don't fight the user's framing
+    }
+}
+
+void updateAllSessionsLeveling(AppRuntime &runtime) {
+    const LevelMode mode = runtime.levelMode;
+    const bool refit = runtime.levelRecomputeRequested;
+    for(auto &s : runtime.sessions) {
+        if(!s) continue;
+        CameraViewState &vs = s->viewState;
+
+        if(mode == LevelMode::Off) {
+            vs.levelEnabled = false;
+            vs.levelOk = false;
+            continue;
+        }
+
+        vs.levelEnabled = true;
+
+        if(mode == LevelMode::Imu) {
+            float ax = 0, ay = 0, az = 0; bool ready = false;
+            {
+                std::lock_guard<std::mutex> g(s->imuMutex);
+                ax = s->lastAccel.x; ay = s->lastAccel.y; az = s->lastAccel.z;
+                ready = s->imuReady;
+            }
+            const float prevTx = vs.levelMat[12], prevTy = vs.levelMat[13], prevTz = vs.levelMat[14];
+            float mtx[16];
+            if(ready && computeImuLevelMatrix(ax, ay, az, s->accelToOptRot, mtx)) {
+                float tx = 0.0f, ty = 0.0f, tz = 0.0f;
+                if(estimateFloorSnap(mtx, vs.mesh, tx, ty, tz)) {
+                    // Center + snap the floor onto the grid; smooth so it doesn't
+                    // jitter frame-to-frame as the cloud's points change.
+                    if(vs.levelOk) {
+                        tx = prevTx * 0.8f + tx * 0.2f;
+                        ty = prevTy * 0.8f + ty * 0.2f;
+                        tz = prevTz * 0.8f + tz * 0.2f;
+                    }
+                    mtx[12] = tx; mtx[13] = ty; mtx[14] = tz;
+                }
+                std::copy(mtx, mtx + 16, vs.levelMat);
+                vs.levelOk = true;
+            } else {
+                vs.levelOk = false;
+            }
+        } else { // LevelMode::Floor — recompute only on request (mode switch / button)
+            if(refit) {
+                float mtx[16];
+                // computeFloorLevelMatrix already bakes the floor->grid snap.
+                if(vs.mesh.hasData && computeFloorLevelMatrix(vs.mesh, mtx)) {
+                    std::copy(mtx, mtx + 16, vs.levelMat);
+                    vs.levelOk = true;
+                } else {
+                    vs.levelOk = false;
+                }
+            }
+        }
+    }
+    runtime.levelRecomputeRequested = false;
 }

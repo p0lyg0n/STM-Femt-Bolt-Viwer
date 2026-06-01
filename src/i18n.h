@@ -26,6 +26,26 @@ enum class S {
     ViewVsyncOff,
     ViewVsyncHint,
 
+    // VIEW section — floor auto-leveling
+    LevelLabel,
+    LevelOff,
+    LevelFloor,
+    LevelImu,
+    LevelRefit,
+    LevelStatOk,
+    LevelStatNoFloor,
+    LevelStatImuWait,
+    TipLevel,
+    TipLevelRefit,
+
+    // VIEW section — preset viewpoints
+    ViewpointLabel,
+    ViewTop,
+    ViewFront,
+    ViewSide,
+    ViewBottom,
+    TipViewpoint,
+
     // STREAM section
     StreamDepthPrefix,
     StreamColorPrefix,

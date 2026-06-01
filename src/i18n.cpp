@@ -32,6 +32,41 @@ const char *kStrings[(int)S::_Count][3] = {
     /* ViewVsyncOff         */ {u8"VSync: OFF",            u8"VSync: OFF",               u8"VSync: OFF"},
     /* ViewVsyncHint        */ {u8"OFF で応答が軽くなる",  u8"OFF = snappier drag",       u8"OFF로 하면 반응이 빨라짐"},
 
+    // ---- VIEW: floor auto-leveling ----
+    /* LevelLabel           */ {u8"水平化 (床に合わせる)", u8"Auto-level floor",         u8"바닥 수평 맞추기"},
+    /* LevelOff             */ {u8"オフ",                  u8"Off",                      u8"끄기"},
+    /* LevelFloor           */ {u8"床フィット",            u8"Floor-fit",                u8"바닥 피팅"},
+    /* LevelImu             */ {u8"IMU",                   u8"IMU",                      u8"IMU"},
+    /* LevelRefit           */ {u8"床に合わせ直す",        u8"Re-fit to floor",          u8"바닥에 다시 맞추기"},
+    /* LevelStatOk          */ {u8"水平化OK",              u8"leveled",                  u8"수평화됨"},
+    /* LevelStatNoFloor     */ {u8"床が見つかりません",    u8"no floor found",           u8"바닥을 찾을 수 없음"},
+    /* LevelStatImuWait     */ {u8"IMU待機中",             u8"IMU waiting",              u8"IMU 대기 중"},
+    /* TipLevel             */ {u8"傾いた点群を自動で水平にします。\n"
+                                u8"床フィット: 点群から床平面を検出して立て直す (推奨・確実)\n"
+                                u8"IMU: 加速度センサーの重力方向で水平化\n"
+                                u8"※IMUがずれて見える個体では床フィットを使ってください",
+                                u8"Automatically level a tilted point cloud.\n"
+                                u8"Floor-fit: detect the floor plane from the points (recommended, robust)\n"
+                                u8"IMU: level using the accelerometer's gravity direction\n"
+                                u8"If IMU looks off on your unit, use Floor-fit.",
+                                u8"기울어진 포인트 클라우드를 자동으로 수평화합니다.\n"
+                                u8"바닥 피팅: 점에서 바닥 평면을 검출 (권장, 안정적)\n"
+                                u8"IMU: 가속도 센서의 중력 방향으로 수평화\n"
+                                u8"IMU가 어긋나 보이면 바닥 피팅을 사용하세요."},
+    /* TipLevelRefit        */ {u8"現在の点群から床平面を検出し直します。\n床がよく見えている状態で押してください。",
+                                u8"Re-detect the floor plane from the current point cloud.\nPress while the floor is clearly visible.",
+                                u8"현재 포인트 클라우드에서 바닥 평면을 다시 검출합니다.\n바닥이 잘 보일 때 누르세요."},
+
+    // ---- VIEW: preset viewpoints ----
+    /* ViewpointLabel       */ {u8"視点プリセット",          u8"Viewpoint",                u8"시점 프리셋"},
+    /* ViewTop              */ {u8"上",                      u8"Top",                      u8"위"},
+    /* ViewFront            */ {u8"正面",                    u8"Front",                    u8"정면"},
+    /* ViewSide             */ {u8"横",                      u8"Side",                     u8"옆"},
+    /* ViewBottom           */ {u8"下",                      u8"Bottom",                   u8"아래"},
+    /* TipViewpoint         */ {u8"視点を定位置に切り替えます（Unityのように）。\n上=真上から見下ろし / 正面 / 横 / 下=真下から。\nホイールでズーム、ドラッグで自由回転に戻れます。",
+                                u8"Snap the camera to a fixed viewpoint (Unity-style).\nTop = bird's-eye down / Front / Side / Bottom = from below.\nWheel to zoom; drag to return to free orbit.",
+                                u8"카메라를 고정 시점으로 전환합니다 (Unity처럼).\n위=정상에서 내려보기 / 정면 / 옆 / 아래=아래에서.\n휠로 줌, 드래그로 자유 회전."},
+
     // ---- STREAM ----
     /* StreamDepthPrefix    */ {u8"Depth: ",              u8"Depth: ",                  u8"Depth: "},
     /* StreamColorPrefix    */ {u8"Color: ",              u8"Color: ",                  u8"Color: "},

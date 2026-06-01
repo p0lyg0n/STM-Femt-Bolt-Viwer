@@ -428,6 +428,26 @@ void renderSidebar(AppRuntime &runtime) {
 
         ImGui::Spacing();
 
+        // ---- Preset viewpoints (Unity-style): Top / Front / Side / Bottom ----
+        ImGui::PushFont(fontS);
+        ImGui::TextDisabled("%s", i18n::L(i18n::S::ViewpointLabel));
+        ImGui::PopFont();
+        {
+            const float avail = ImGui::GetContentRegionAvail().x;
+            const ImVec2 b = ImVec2((avail - 6.0f) / 4.0f, 30.0f);
+            // Yaw/pitch chosen so the floor (XZ plane) faces the camera as named.
+            if(ImGui::Button(i18n::L(i18n::S::ViewTop),    b)) setAllSessionsView(runtime, 0.0f,  89.0f);
+            ImGui::SameLine();
+            if(ImGui::Button(i18n::L(i18n::S::ViewFront),  b)) setAllSessionsView(runtime, 0.0f,   0.0f);
+            ImGui::SameLine();
+            if(ImGui::Button(i18n::L(i18n::S::ViewSide),   b)) setAllSessionsView(runtime, 90.0f,  0.0f);
+            ImGui::SameLine();
+            if(ImGui::Button(i18n::L(i18n::S::ViewBottom), b)) setAllSessionsView(runtime, 0.0f, -89.0f);
+            tooltipOnHover(i18n::L(i18n::S::TipViewpoint));
+        }
+
+        ImGui::Spacing();
+
         const char *vsyncLabel = runtime.vsync ? i18n::L(i18n::S::ViewVsyncOn)
                                                : i18n::L(i18n::S::ViewVsyncOff);
         if(ImGui::Button(vsyncLabel, ImVec2(-1, 28))) {
@@ -438,6 +458,53 @@ void renderSidebar(AppRuntime &runtime) {
         ImGui::PushFont(fontS);
         ImGui::TextDisabled("%s", i18n::L(i18n::S::ViewVsyncHint));
         ImGui::PopFont();
+
+        ImGui::Spacing();
+
+        // ---- Floor auto-leveling (Off / Floor-fit / IMU) ----
+        // Each camera is mounted at an angle, so its cloud renders tilted vs the
+        // reference grid. Floor-fit detects the floor plane from the points;
+        // IMU uses the accelerometer's gravity direction.
+        ImGui::PushFont(fontS);
+        ImGui::TextDisabled("%s", i18n::L(i18n::S::LevelLabel));
+        ImGui::PopFont();
+        {
+            int lm = static_cast<int>(runtime.levelMode);
+            ImGui::RadioButton(i18n::L(i18n::S::LevelOff),   &lm, static_cast<int>(LevelMode::Off));
+            ImGui::SameLine();
+            ImGui::RadioButton(i18n::L(i18n::S::LevelFloor), &lm, static_cast<int>(LevelMode::Floor));
+            ImGui::SameLine();
+            ImGui::RadioButton(i18n::L(i18n::S::LevelImu),   &lm, static_cast<int>(LevelMode::Imu));
+            tooltipOnHover(i18n::L(i18n::S::TipLevel));
+            if(lm != static_cast<int>(runtime.levelMode)) {
+                runtime.levelMode = static_cast<LevelMode>(lm);
+                runtime.levelRecomputeRequested = true;  // recompute right after switching
+            }
+
+            if(runtime.levelMode == LevelMode::Floor) {
+                if(ImGui::Button(i18n::L(i18n::S::LevelRefit), ImVec2(-1, 28))) {
+                    runtime.levelRecomputeRequested = true;
+                }
+                tooltipOnHover(i18n::L(i18n::S::TipLevelRefit));
+            }
+
+            if(runtime.levelMode != LevelMode::Off) {
+                ImGui::PushFont(fontS);
+                for(size_t i = 0; i < runtime.sessions.size(); ++i) {
+                    const auto &sx = runtime.sessions[i];
+                    if(!sx) continue;
+                    const bool ok = sx->viewState.levelOk;
+                    const char *st = ok ? i18n::L(i18n::S::LevelStatOk)
+                                        : (runtime.levelMode == LevelMode::Imu
+                                               ? i18n::L(i18n::S::LevelStatImuWait)
+                                               : i18n::L(i18n::S::LevelStatNoFloor));
+                    ImGui::TextColored(ok ? ImVec4(0.40f, 1.0f, 0.50f, 1.0f)
+                                          : ImVec4(1.0f, 0.70f, 0.30f, 1.0f),
+                                       "Cam %zu: %s", i, st);
+                }
+                ImGui::PopFont();
+            }
+        }
     }
 
     drawSectionSeparator();

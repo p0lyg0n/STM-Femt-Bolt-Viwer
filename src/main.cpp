@@ -350,6 +350,9 @@ int main() try {
             } catch(...) {}
         }
 
+        // Refresh floor-leveling corrections (IMU: every frame; Floor: on request).
+        updateAllSessionsLeveling(runtime);
+
         glfwPollEvents();
         applyHotkeysToActiveSession(runtime, window);
         if(isExitKeyPressed(window)) break;
@@ -362,11 +365,45 @@ int main() try {
         glClearColor(0.05f, 0.04f, 0.06f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        const SystemUsbTopology usbTopology = snapshotUsbTopology(runtime);
-        const std::unordered_map<std::string, int> controllerUsage = snapshotControllerUsage(runtime);
-        renderSidebar(runtime);
-        for(size_t i = 0; i < sessions.size(); ++i) {
-            renderSessionSlot(sessions[i], runtime, i, usbTopology, controllerUsage);
+        const bool solo = runtime.soloSessionIndex >= 0 &&
+                          runtime.soloSessionIndex < static_cast<int>(sessions.size());
+        if(solo) {
+            // Solo: the chosen camera's point cloud filling the area to the RIGHT
+            // of the sidebar. The sidebar stays visible so VIEW controls (render
+            // mode, floor-leveling, etc.) remain reachable while in solo.
+            renderSidebar(runtime);
+            const Viewport mv = mainContentViewport(runtime);
+            const float aspect = static_cast<float>(mv.w) / static_cast<float>(std::max(1, mv.h));
+            drawPointPane(sessions[static_cast<size_t>(runtime.soloSessionIndex)]->viewState,
+                          mv.x, mv.y, mv.w, mv.h, aspect);
+        } else {
+            const SystemUsbTopology usbTopology = snapshotUsbTopology(runtime);
+            const std::unordered_map<std::string, int> controllerUsage = snapshotControllerUsage(runtime);
+            renderSidebar(runtime);
+            for(size_t i = 0; i < sessions.size(); ++i) {
+                renderSessionSlot(sessions[i], runtime, i, usbTopology, controllerUsage);
+            }
+        }
+
+        // Small always-on overlay: per-camera "solo" checkboxes (fill the window
+        // with one camera's point cloud). Works in both grid and solo modes.
+        {
+            ImGui::SetNextWindowBgAlpha(0.6f);
+            ImGui::SetNextWindowPos(ImVec2(static_cast<float>(runtime.framebufferW) - 150.0f, 8.0f),
+                                    ImGuiCond_FirstUseEver);
+            if(ImGui::Begin(u8"ソロ表示##solo", nullptr,
+                            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing)) {
+                for(size_t i = 0; i < sessions.size(); ++i) {
+                    bool on = (runtime.soloSessionIndex == static_cast<int>(i));
+                    char lbl[48];
+                    std::snprintf(lbl, sizeof(lbl), u8"Cam %zu 全画面##solo%zu", i, i);
+                    if(ImGui::Checkbox(lbl, &on)) {
+                        runtime.soloSessionIndex = on ? static_cast<int>(i) : -1;
+                        if(on) runtime.activeSessionIndex = static_cast<int>(i);
+                    }
+                }
+            }
+            ImGui::End();
         }
 
         ImGui::Render();

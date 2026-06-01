@@ -32,6 +32,16 @@ void applyViewTransform(const ViewerControl &view, float &x, float &y, float &z)
     z += kCameraBaseOffsetZ;
 }
 
+// Apply a column-major 4x4 (the floor-leveling matrix: rotation + Y snap) to a
+// point: result = R * v + t. Mirrors the glMultMatrixf path used by the GPU
+// renderer, so the CPU fallback levels AND snaps the floor to the grid identically.
+void applyLevelRot(const float m[16], float &x, float &y, float &z) {
+    const float rx = m[0]*x + m[4]*y + m[8] *z + m[12];
+    const float ry = m[1]*x + m[5]*y + m[9] *z + m[13];
+    const float rz = m[2]*x + m[6]*y + m[10]*z + m[14];
+    x = rx; y = ry; z = rz;
+}
+
 void drawRectOutline(const Viewport &vp, float r, float g, float b, float a = 1.0f) {
     glViewport(vp.x, vp.y, vp.w, vp.h);
     glDisable(GL_DEPTH_TEST);
@@ -216,27 +226,33 @@ Viewport drawPointPane(const CameraViewState &s, int x, int y, int w, int h, flo
         glEnd();
     }
 
-    if(s.mesh.hasData && s.pointMode == PointRenderMode::GpuMesh && !s.mesh.tris.empty()) {
-        glBegin(GL_TRIANGLES);
-        for(size_t i = 0; i + 2 < s.mesh.tris.size(); i += 3) {
-            for(int k = 0; k < 3; ++k) {
-                const uint32_t idx = s.mesh.tris[i + static_cast<size_t>(k)];
-                const size_t p = static_cast<size_t>(idx) * 3u;
-                glColor3ub(s.mesh.rgb[p + 0], s.mesh.rgb[p + 1], s.mesh.rgb[p + 2]);
-                glVertex3f(s.mesh.xyz[p + 0], s.mesh.xyz[p + 1], s.mesh.xyz[p + 2]);
-            }
+    // Vertex arrays (one GPU draw call) instead of per-vertex immediate mode —
+    // far faster for tens of thousands of points/triangles.
+    if(s.mesh.hasData && s.mesh.points > 0) {
+        const bool drawTris = (s.pointMode == PointRenderMode::GpuMesh) && !s.mesh.tris.empty();
+        // Floor auto-leveling: rotate ONLY the cloud upright (the grid/axes above
+        // stay as the fixed horizontal reference). levelMat is identity unless a
+        // floor/IMU correction was computed.
+        if(s.levelEnabled) {
+            glPushMatrix();
+            glMultMatrixf(s.levelMat);
         }
-        glEnd();
-    }
-    if(s.mesh.hasData && (s.pointMode == PointRenderMode::GpuPoint || s.mesh.tris.empty())) {
-        glPointSize(2.0f);
-        glBegin(GL_POINTS);
-        for(int i = 0; i < s.mesh.points; ++i) {
-            const size_t p = static_cast<size_t>(i) * 3u;
-            glColor3ub(s.mesh.rgb[p + 0], s.mesh.rgb[p + 1], s.mesh.rgb[p + 2]);
-            glVertex3f(s.mesh.xyz[p + 0], s.mesh.xyz[p + 1], s.mesh.xyz[p + 2]);
+        glEnableClientState(GL_VERTEX_ARRAY);
+        glEnableClientState(GL_COLOR_ARRAY);
+        glVertexPointer(3, GL_FLOAT, 0, s.mesh.xyz.data());
+        glColorPointer(3, GL_UNSIGNED_BYTE, 0, s.mesh.rgb.data());
+        if(drawTris) {
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(s.mesh.tris.size()),
+                           GL_UNSIGNED_INT, s.mesh.tris.data());
+        } else {
+            glPointSize(2.0f);
+            glDrawArrays(GL_POINTS, 0, s.mesh.points);
         }
-        glEnd();
+        glDisableClientState(GL_COLOR_ARRAY);
+        glDisableClientState(GL_VERTEX_ARRAY);
+        if(s.levelEnabled) {
+            glPopMatrix();
+        }
     }
     return vp;
 }
@@ -255,6 +271,7 @@ bool renderCpuPointPanelImage(const CameraViewState &s, int w, int h, std::vecto
         float x = s.mesh.xyz[p + 0];
         float y = s.mesh.xyz[p + 1];
         float z = s.mesh.xyz[p + 2];
+        if(s.levelEnabled) applyLevelRot(s.levelMat, x, y, z);
         applyViewTransform(s.view, x, y, z);
         if(z >= -kNearClipZ || z <= -kFarClipZ) continue;
 

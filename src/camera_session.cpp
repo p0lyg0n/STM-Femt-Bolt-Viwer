@@ -346,6 +346,36 @@ void startImuSensors(const std::shared_ptr<CameraSession> &session) {
         if(sensor) {
             auto profiles = sensor->getStreamProfileList();
             auto profile = profiles->getAccelStreamProfile(OB_ACCEL_FS_4g, OB_SAMPLE_RATE_100_HZ);
+
+            // Resolve the accelerometer->optical rotation so gravity can level the
+            // cloud. The Femto Bolt IMU frame differs from the depth/color optical
+            // frame; getExtrinsicTo gives the mapping (target = rot * source). Use
+            // the color profile since the cloud is built in the color optical frame,
+            // falling back to depth.
+            try {
+                std::shared_ptr<ob::StreamProfile> target;
+                try {
+                    auto colorSensor = session->device->getSensor(OB_SENSOR_COLOR);
+                    if(colorSensor) target = colorSensor->getStreamProfileList()->getProfile(0);
+                } catch(...) {}
+                if(!target) {
+                    try {
+                        auto depthSensor = session->device->getSensor(OB_SENSOR_DEPTH);
+                        if(depthSensor) target = depthSensor->getStreamProfileList()->getProfile(0);
+                    } catch(...) {}
+                }
+                if(target) {
+                    OBExtrinsic ex = profile->getExtrinsicTo(target);
+                    for(int i = 0; i < 9; ++i) session->accelToOptRot[i] = ex.rot[i];
+                    session->accelExtrinsicReady = true;
+                    std::cout << logc::cyan << "[INFO]" << logc::reset
+                              << " Device " << session->deviceIndex << " accel->optical rot ["
+                              << ex.rot[0] << "," << ex.rot[1] << "," << ex.rot[2] << "; "
+                              << ex.rot[3] << "," << ex.rot[4] << "," << ex.rot[5] << "; "
+                              << ex.rot[6] << "," << ex.rot[7] << "," << ex.rot[8] << "]" << std::endl;
+                }
+            } catch(...) {}
+
             std::weak_ptr<CameraSession> weak = session;
             sensor->start(profile, [weak](std::shared_ptr<ob::Frame> frame) {
                 try {
