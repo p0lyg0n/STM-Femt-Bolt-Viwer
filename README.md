@@ -12,13 +12,12 @@ Displays RGB, Depth, and XYZRGB point cloud simultaneously in one window.
 
 **ビルド不要。zip をダウンロードして実行するだけです。**
 
-1. [Releases ページ](https://github.com/p0lyg0n/STM-Femt-Bolt-Viwer/releases) を開く
-2. 最新の zip をダウンロード
-   - `Auto Build (main)` … 開発中の最新版（プレリリース）
-   - `v1.0.0` などのタグ付き … 正式版
-3. 解凍して `stm_femto_bolt_viewer.exe` を実行
+1. 配布された zip（または [Releases ページ](https://github.com/p0lyg0n/STM-Femt-Bolt-Viwer/releases)）から最新の zip を入手
+2. 解凍して `stm_femto_bolt_viewer.exe` を実行
 
 zip には実行ファイルと Orbbec SDK ランタイム DLL がすべて同梱されています。**別途 Orbbec SDK のインストールは不要**です。
+
+> zip はローカルビルドで作成・配布します（GitHub Actions による自動公開は廃止しました）。作り方は下の「[ローカルで配布 zip を作る](#ローカルで配布-zip-を作る)」を参照。
 
 ### ハードウェア要件
 
@@ -208,14 +207,15 @@ src/
 
 ---
 
-## リリース自動公開の仕組み
+## リリース（ローカルビルド）
 
-- **`main` ブランチに push** されるたびに GitHub Actions が自動ビルドし、`Auto Build (main)` プレリリースを上書き公開
-- **`v*` タグ（例: `v1.0.0`）を push** した場合は、同名の正式リリースとして公開
-- CI 実行環境は **self-hosted Windows runner**（Orbbec SDK のインストールが必要なため GitHub-hosted runner は使えません）
-- ランナー側は `C:\Program Files\OrbbecSDK 2.7.6` に SDK がある前提
-- **ランナーはサービス化していません。push 前に `C:\actions-runner\run.cmd` を手動起動する必要があります** → [.claude/skills/release-self-hosted-runner/SKILL.md](.claude/skills/release-self-hosted-runner/SKILL.md)
-- 運用詳細: [docs/RELEASE_RULE_JA.md](docs/RELEASE_RULE_JA.md)
+GitHub Actions による自動ビルド／自動公開は**廃止しました**。self-hosted ランナーを手動起動する運用だったため、ランナー未起動のまま `main` へ push するとジョブが実行待ちで最大 24 時間キューに滞留する問題があったためです。リリース zip はローカルで作成します。
+
+1. ビルド: `.\build.ps1`
+2. zip 作成: 下の「[ローカルで配布 zip を作る](#ローカルで配布-zip-を作る)」のコマンド
+3. （配布する場合）生成された zip を手動で配布（Releases ページへのアップロード等）
+
+運用ルール: [docs/RELEASE_RULE_JA.md](docs/RELEASE_RULE_JA.md)
 
 ---
 
