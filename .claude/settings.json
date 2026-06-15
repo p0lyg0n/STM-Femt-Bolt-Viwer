@@ -1,7 +1,5 @@
 {
   "permissions": {
-    "allow": [
-      "Edit(/.claude/skills/release-self-hosted-runner/**)"
-    ]
+    "allow": []
   }
 }
